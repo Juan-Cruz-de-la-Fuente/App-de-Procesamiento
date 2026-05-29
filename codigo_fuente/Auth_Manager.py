@@ -5,6 +5,9 @@ import os
 DB_NAME = os.path.join(os.path.dirname(__file__), '..', 'identificaciones_api', 'users.db')
 
 def init_db():
+    # Asegurar que el directorio de la base de datos exista (necesario en la nube)
+    os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
+
     from codigo_fuente import Drive_Connection as drive_api
     # Intentar descargar users.db desde Drive si existe en la carpeta raíz
     db_file_id = None
