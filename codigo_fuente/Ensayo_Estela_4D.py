@@ -147,14 +147,17 @@ def show_4d():
 
     # --- PASO 3 (Sin Expander) ---
     st.markdown("### 🎨 PASO 3: Opciones de Visualización")
-    col_var, col_scale, col_opt = st.columns(3)
+    col_var, col_scale, col_bg, col_opt = st.columns(4)
     with col_var:
         var_sel = st.selectbox("Variable a graficar:", ["Presión Total [Actual]", " ρ_∞", "V_∞", "P_∞"])
     with col_scale:
         scale = st.slider("Relieve (Presión -> Z en gráfico):", 0.0, 5.0, 1.0)
+    with col_bg:
+        vis_bg = st.selectbox("Fondo:", ["Oscuro (Negro)", "Claro (Blanco)"], index=0, key="vis_bg_4d")
     with col_opt:
-        st.write("Visibilidad")
+        st.write("Opciones de Ejes y Modelo")
         show_model = st.checkbox("Mostrar Modelo 3D de Referencia", value=True)
+        vis_ejes = st.checkbox("Mostrar Ejes 3D", value=True, key="vis_ejes_4d")
 
     st.markdown("---")
 
@@ -183,11 +186,62 @@ def show_4d():
             ))
 
         if show_model and 'objeto_referencia_4d' in st.session_state:
-            obj = st.session_state.objeto_referencia_4d
-            fig.add_trace(go.Mesh3d(x=obj['x'], y=obj['y'], z=obj['z'], i=obj['i'], j=obj['j'], k=obj['k'], color='gray', opacity=0.3, name="Modelo"))
+            obj_base = st.session_state.objeto_referencia_base if 'objeto_referencia_base' in st.session_state else st.session_state.objeto_referencia_4d
+            cg = st.session_state.get('modelo_cg', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+            
+            # Detectar AOA automáticamente de los planos graficados
+            alpha_auto = 0.0
+            if st.session_state.planos_seleccionados_4d:
+                p_name = st.session_state.planos_seleccionados_4d[0][1]
+                aoa_val = _extraer_aoa_4d(p_name)
+                if aoa_val is not None:
+                    alpha_auto = aoa_val
+                    
+            # Aplicar rotación
+            xm, ym, zm = _aplicar_pose_modelo_4d(obj_base, alpha_auto, 0.0, 0.0, 0.0, 0.0, cg)
+            obj_ref = st.session_state.objeto_referencia_4d
+            
+            # Mesh o Scatter
+            if obj_ref.get('type') == 'scatter':
+                fig.add_trace(go.Scatter3d(
+                    x=xm, y=ym, z=zm,
+                    mode='markers', marker=dict(size=2, color='#888', opacity=0.5),
+                    name="Modelo"
+                ))
+            else:
+                fig.add_trace(go.Mesh3d(
+                    x=xm, y=ym, z=zm,
+                    i=obj_ref['i'], j=obj_ref['j'], k=obj_ref['k'],
+                    color='#5588cc', opacity=0.3, name=f"Modelo (α={alpha_auto:.1f}°)",
+                    alphahull=0, showscale=False,
+                    lighting=dict(ambient=0.4, diffuse=0.8)
+                ))
+
+        # Configurar colores de fondo
+        bg_color = '#0e1117' if "Oscuro" in vis_bg else '#ffffff'
+        font_color = 'white' if "Oscuro" in vis_bg else 'black'
+        
+        # Configurar visibilidad de ejes
+        axis_props = dict(
+            showgrid=vis_ejes, zeroline=vis_ejes, showticklabels=vis_ejes,
+            showaxeslabels=vis_ejes, showbackground=False
+        )
 
         # Rotar la cámara 180° sobre el eje Z (cambiando los signos de x e y en el eye de la cámara)
         camera_dict = dict(eye=dict(x=-1.25, y=-1.25, z=1.25))
-        fig.update_layout(scene=dict(aspectmode='data', camera=camera_dict), height=800, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+        
+        fig.update_layout(
+            scene=dict(
+                aspectmode='data',
+                camera=camera_dict,
+                xaxis=dict(title="X (Estación)" if vis_ejes else "", autorange="reversed", **axis_props),
+                yaxis=dict(title="Y (Envergadura)" if vis_ejes else "", **axis_props),
+                zaxis=dict(title="Z (Altura)" if vis_ejes else "", **axis_props)
+            ),
+            height=800,
+            paper_bgcolor=bg_color,
+            plot_bgcolor=bg_color,
+            font=dict(color=font_color)
+        )
         st.plotly_chart(fig, use_container_width=True)
 
