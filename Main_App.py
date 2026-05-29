@@ -138,7 +138,10 @@ def login_page():
                     drive_api.init_user_folders(user)
                     st.rerun()
                 else:
-                    st.error("Credenciales incorrectas")
+                    if auth.check_db_status():
+                        st.error("⚠️ **Error de Sincronización:** La base de datos está vacía. Esto indica que la conexión con Google Drive falló al iniciar y no pudo descargarse `users.db`. Por favor, asegúrate de configurar correctamente el secreto `google_token_json` en las configuraciones avanzadas de tu aplicación de Streamlit.")
+                    else:
+                        st.error("Credenciales incorrectas")
 
 # --- MAIN LOGIC ---
 def render_navbar():

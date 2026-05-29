@@ -80,6 +80,18 @@ def verify_user(username, password):
         st.error(f"Error técnico en el login: {e}")
         return False
 
+def check_db_status():
+    """Devuelve True si la tabla de usuarios está vacía."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM users")
+        count = c.fetchone()[0]
+        conn.close()
+        return count == 0
+    except Exception:
+        return True
+
 # Initialize DB on module load
 init_db()
 
