@@ -1,0 +1,27 @@
+# Streamlit
+.streamlit/
+secrets.toml
+
+# API Keys & Tokens
+identificaciones_api/
+OAuth_Token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Data
+*.csv
+*.vtk
+*.db
+!users.db # Keep user database if needed, though usually excluded
+
+# OS
+.DS_Store
+Thumbs.db
