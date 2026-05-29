@@ -10,3 +10,5 @@ google-api-python-client
 imageio
 matplotlib
 python-dotenv
+opencv-python-headless
+streamlit-image-coordinates

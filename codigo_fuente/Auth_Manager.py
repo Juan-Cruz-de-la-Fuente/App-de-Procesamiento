@@ -429,3 +429,49 @@ def save_vtk_superficie(username, filename, vtk_bytes):
         return False
     file_id = drive_api.upload_file(vtk_bytes, filename, folder_id, mimetype='application/octet-stream')
     return file_id is not None
+
+
+def get_user_files_1d(username):
+    """Lista archivos CSV de la carpeta 1D. Devuelve lista de nombres de archivos (strings)."""
+    import streamlit as st
+    uid = drive_api.get_user_root(username)
+    eid = drive_api.get_or_create_folder(drive_api.FOLDER_ESTELA, uid)
+    fid = drive_api.get_or_create_folder(drive_api.FOLDER_1D, eid)
+    if not fid:
+        return []
+        
+    @st.cache_data(ttl=300, show_spinner=False)
+    def fetch_all_1d(folder_id):
+        all_res = []
+        fs = drive_api.list_files(folder_id)
+        for f in fs:
+            name = f.get('name', '')
+            if name.endswith('.csv'):
+                all_res.append(name)
+        return sorted(all_res, reverse=True)
+        
+    return fetch_all_1d(fid)
+
+
+def get_csv_content_1d(username, filename):
+    """Descarga el contenido de un archivo 1D de Drive como string."""
+    uid = drive_api.get_user_root(username)
+    eid = drive_api.get_or_create_folder(drive_api.FOLDER_ESTELA, uid)
+    fid = drive_api.get_or_create_folder(drive_api.FOLDER_1D, eid)
+    if not fid:
+        return None
+    fs = drive_api.list_files(fid)
+    file_id = None
+    for f in fs:
+        if f.get('name') == filename:
+            file_id = f['id']
+            break
+    if file_id:
+        data_bytes = drive_api.download_file(file_id)
+        return data_bytes.decode('utf-8') if data_bytes else None
+    return None
+
+
+def get_folder_datafusion(username):
+    """Exhibe la carpeta principal de Data Fusion."""
+    return drive_api.get_folder_datafusion(username)

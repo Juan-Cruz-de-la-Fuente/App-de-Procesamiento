@@ -126,8 +126,12 @@ def show_4d():
             st.info("No hay planos 4D en la Base de Datos.")
         else:
             dict_drv = {f"{p[1]} (X={p[2]})": p for p in planos_drv}
-            planos_sel_labels = st.multiselect("Seleccionar Planos de Drive:", list(dict_drv.keys()))
-            if st.button("📥 Cargar Planos de Drive al Visualizador"):
+            planos_sel_labels = st.multiselect("Seleccionar Planos de Drive:", list(dict_drv.keys()), key="sel_planos_4d_ui")
+            
+            if 'last_sel_planos_4d' not in st.session_state:
+                st.session_state.last_sel_planos_4d = []
+                
+            if planos_sel_labels != st.session_state.last_sel_planos_4d:
                 with st.spinner("Descargando planos seleccionados..."):
                     loaded = []
                     for lbl in planos_sel_labels:
@@ -136,7 +140,9 @@ def show_4d():
                             p_info[4] = auth.get_surface_data_string(p_info[0])
                         loaded.append(tuple(p_info))
                     st.session_state.planos_seleccionados_4d = loaded
+                    st.session_state.last_sel_planos_4d = planos_sel_labels
                 st.success(f"✅ {len(planos_sel_labels)} planos cargados y listos para visualizar.")
+                st.rerun()
     else:
         if not st.session_state.archivos_4d_memoria:
             st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")

@@ -112,9 +112,9 @@ def show_3d():
             st.info("No hay superficies en Drive.")
         else:
             dict_drv = {f"{s[1]} ({s[3][:10] if s[3] else ''})": s for s in surfaces_drv}
-            sel_drv = st.selectbox("Seleccionar Superficie de Drive:", ["-- Seleccionar --"] + list(dict_drv.keys()))
+            sel_drv = st.selectbox("Seleccionar Superficie de Drive:", ["-- Seleccionar --"] + list(dict_drv.keys()), key="sel_drv_3d_ui")
             if sel_drv != "-- Seleccionar --":
-                if st.button("📥 Cargar Superficie al Visualizador", use_container_width=True):
+                if 'last_sel_drv_3d' not in st.session_state or st.session_state.last_sel_drv_3d != sel_drv:
                     with st.spinner("Descargando superficie seleccionada..."):
                         s_data = list(dict_drv[sel_drv])
                         if not s_data[4]:
@@ -124,7 +124,9 @@ def show_3d():
                             'nombre': s_data[1],
                             'datos': pd.read_json(io.StringIO(s_data[4]))
                         }
+                        st.session_state.last_sel_drv_3d = sel_drv
                     st.success(f"✅ Superficie cargada y lista para visualizar.")
+                    st.rerun()
     else:
         if not st.session_state.archivos_3d_memoria:
             st.warning("⚠️ No hay superficies en la memoria de sesión. Procese archivos en el Paso 1 primero.")

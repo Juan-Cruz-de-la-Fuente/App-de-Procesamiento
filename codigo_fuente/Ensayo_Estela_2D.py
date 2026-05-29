@@ -116,16 +116,19 @@ def show_2d():
             st.info("No hay matrices en Drive.")
         else:
             dict_drv = {f"{a[1]} [{a[2][:10] if a[2] else ''}]": a for a in archivos_drv}
-            sel_drv = st.selectbox("Seleccionar Matriz de Drive:", ["-- Seleccionar --"] + list(dict_drv.keys()))
+            sel_drv = st.selectbox("Seleccionar Matriz de Drive:", ["-- Seleccionar --"] + list(dict_drv.keys()), key="sel_drv_2d_ui")
             if sel_drv != "-- Seleccionar --":
-                if st.button("📥 Cargar Matriz al Visualizador", use_container_width=True):
-                    raw = auth.download_file_2d(dict_drv[sel_drv][0])
-                    if raw:
-                        df_m = pd.read_csv(io.BytesIO(raw), sep=';', decimal=',')
-                        if 'Y' not in df_m.columns:
-                            df_m = pd.read_csv(io.BytesIO(raw), sep=',', decimal='.')
-                        st.session_state.matriz_seleccionada_2d = df_m
-                        st.success(f"✅ Matriz cargada y lista para visualizar.")
+                if 'last_sel_drv_2d' not in st.session_state or st.session_state.last_sel_drv_2d != sel_drv:
+                    with st.spinner("Descargando matriz seleccionada..."):
+                        raw = auth.download_file_2d(dict_drv[sel_drv][0])
+                        if raw:
+                            df_m = pd.read_csv(io.BytesIO(raw), sep=';', decimal=',')
+                            if 'Y' not in df_m.columns:
+                                df_m = pd.read_csv(io.BytesIO(raw), sep=',', decimal='.')
+                            st.session_state.matriz_seleccionada_2d = df_m
+                            st.session_state.last_sel_drv_2d = sel_drv
+                    st.success(f"✅ Matriz cargada y lista para visualizar.")
+                    st.rerun()
     else:
         if not st.session_state.archivos_2d_memoria:
             st.warning("⚠️ No hay matrices en la memoria de sesión. Procese archivos en el Paso 1 primero.")

@@ -147,7 +147,7 @@ def login_page():
 def render_navbar():
     if st.session_state.get('logged_in'):
         with st.container():
-            c_sl, c1, c2, c3, c4, c5, c_sr = st.columns([1.0, 2.0, 2.0, 2.0, 2.0, 2.0, 1.0])
+            c_sl, c1, c2, c3, c_df, c4, c5, c_sr = st.columns([0.8, 1.6, 1.8, 1.6, 1.8, 1.6, 1.8, 0.8])
             
             with c1:
                 if st.button("🚀 INICIO", use_container_width=True, 
@@ -186,6 +186,12 @@ def render_navbar():
                 if st.button("📦 MODELOS", use_container_width=True, 
                              type="primary" if st.session_state.seccion_actual == 'modelos' else "secondary"):
                     st.session_state.seccion_actual = 'modelos'
+                    st.rerun()
+
+            with c_df:
+                if st.button("🎨 DATA FUSION", use_container_width=True, 
+                             type="primary" if st.session_state.seccion_actual == 'data_fusion' else "secondary"):
+                    st.session_state.seccion_actual = 'data_fusion'
                     st.rerun()
 
             with c4:
@@ -236,6 +242,9 @@ else:
     elif st.session_state.seccion_actual == 'modelos':
         from codigo_fuente.Ensayo_Estela_Modelos_3D import show_modelos
         show_modelos()
+    elif st.session_state.seccion_actual == 'data_fusion':
+        from codigo_fuente.Seccion_Data_Fusion import show_data_fusion
+        show_data_fusion()
     elif st.session_state.seccion_actual == 'herramientas':
         from codigo_fuente.Herramientas import show_herramientas
         show_herramientas()

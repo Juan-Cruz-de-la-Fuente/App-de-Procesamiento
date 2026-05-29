@@ -153,18 +153,24 @@ def show_1d():
         except:
             files_drv = []
 
-        if not files_drv:
-            st.info("No hay archivos en Drive.")
         else:
-            sel_labels = st.multiselect("Seleccionar Perfiles de Drive:", files_drv)
-            if st.button("📥 Cargar Perfiles al Visualizador", use_container_width=True):
+            sel_labels = st.multiselect("Seleccionar Perfiles de Drive:", files_drv, key="sel_perfiles_1d_ui")
+            
+            # Carga automática reactiva
+            if 'last_sel_perfiles_1d' not in st.session_state:
+                st.session_state.last_sel_perfiles_1d = []
+                
+            if sel_labels != st.session_state.last_sel_perfiles_1d:
                 st.session_state.perfiles_seleccionados_1d = []
-                for label in sel_labels:
-                    csv_content = auth.get_csv_content_1d(st.session_state.username, label)
-                    if csv_content:
-                        df = pd.read_csv(io.StringIO(csv_content), sep=';', decimal=',')
-                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
-                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados y listos para visualizar.")
+                with st.spinner("Descargando perfiles seleccionados..."):
+                    for label in sel_labels:
+                        csv_content = auth.get_csv_content_1d(st.session_state.username, label)
+                        if csv_content:
+                            df = pd.read_csv(io.StringIO(csv_content), sep=';', decimal=',')
+                            st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
+                    st.session_state.last_sel_perfiles_1d = sel_labels
+                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados.")
+                st.rerun()
     else:
         if not st.session_state.sub_archivos_1d_memoria:
             st.warning("⚠️ No hay sub-archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
