@@ -796,27 +796,31 @@ def show_data_fusion():
         marked_pil = draw_points_on_image(pil_display, points, scale_factor)
 
         # Coordinate selection widget
-        value = streamlit_image_coordinates(marked_pil, key=f"coords_df_clicker_{image_name}")
+        if "df_click_counter" not in st.session_state:
+            st.session_state.df_click_counter = 0
+
+        value = streamlit_image_coordinates(
+            marked_pil, 
+            key=f"coords_df_clicker_{image_name}_{st.session_state.df_click_counter}"
+        )
         if value is not None:
             click_xy = (value["x"], value["y"])
-            last_xy = st.session_state.df_last_clicks.get(image_name)
-            if click_xy != last_xy:
-                st.session_state.df_last_clicks[image_name] = click_xy
-                orig_u = float(click_xy[0] / scale_factor)
-                orig_v = float(click_xy[1] / scale_factor)
-                st.session_state.df_points_data[image_name].append(
-                    {"u": orig_u, "v": orig_v, "X": 0.0, "Y": 0.0, "Z": 0.0}
-                )
-                st.rerun()
+            orig_u = float(click_xy[0] / scale_factor)
+            orig_v = float(click_xy[1] / scale_factor)
+            st.session_state.df_points_data[image_name].append(
+                {"u": orig_u, "v": orig_v, "X": 0.0, "Y": 0.0, "Z": 0.0}
+            )
+            st.session_state.df_click_counter += 1
+            st.rerun()
 
         col_del, col_clear = st.columns(2)
         if col_del.button("🗑️ Eliminar último punto", use_container_width=True) and points:
             st.session_state.df_points_data[image_name].pop()
-            st.session_state.df_last_clicks.pop(image_name, None)
+            st.session_state.df_click_counter += 1
             st.rerun()
         if col_clear.button("🧹 Limpiar todos los puntos", use_container_width=True) and points:
             st.session_state.df_points_data[image_name] = []
-            st.session_state.df_last_clicks.pop(image_name, None)
+            st.session_state.df_click_counter += 1
             st.rerun()
 
         st.markdown("---")
