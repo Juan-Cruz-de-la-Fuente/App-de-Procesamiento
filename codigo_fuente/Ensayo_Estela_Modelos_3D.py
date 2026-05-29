@@ -128,25 +128,67 @@ def show_modelos():
                             st.error("El CSV requiere columnas X, Y, Z")
 
                     elif file_ext == 'stl':
-                        if 'pv' not in globals() and 'pv' not in locals():
-                            st.error("PyVista no está instalado para procesar STL. Por favor instale pyvista (pip install pyvista).")
+                        import struct
+                        # Parsea STL usando un parser nativo rápido sin depender de pyvista (evitando dependencias de C++ VTK)
+                        file_bytes = file_obj.read()
+                        
+                        try:
+                            if len(file_bytes) < 84:
+                                raise ValueError("El archivo es demasiado pequeño para ser un STL válido.")
+                            
+                            num_tri = struct.unpack('<I', file_bytes[80:84])[0]
+                            expected = 84 + num_tri * 50
+                            
+                            if len(file_bytes) == expected:
+                                # STL Binario
+                                buffer = file_bytes[84:]
+                                dtype = np.dtype([
+                                    ('normal', '<f4', (3,)),
+                                    ('v0', '<f4', (3,)),
+                                    ('v1', '<f4', (3,)),
+                                    ('v2', '<f4', (3,)),
+                                    ('attr', '<u2')
+                                ])
+                                mesh_d = np.frombuffer(buffer, dtype=dtype, count=num_tri)
+                                all_v = np.stack([mesh_d['v0'], mesh_d['v1'], mesh_d['v2']], axis=1)
+                                flat_v = all_v.reshape(-1, 3)
+                                vertices_u, inv = np.unique(flat_v, axis=0, return_inverse=True)
+                                faces_u = inv.reshape(-1, 3)
+                                v_arr, f_arr = vertices_u.astype(np.float64), faces_u.astype(np.int32)
+                            else:
+                                # STL ASCII
+                                try:
+                                    text = file_bytes.decode('utf-8', errors='ignore')
+                                except Exception:
+                                    raise ValueError("No se pudo decodificar el archivo STL como ASCII.")
+                                v_list = []
+                                lines_txt = text.split('\n')
+                                for l in lines_txt:
+                                    p_line = l.strip().split()
+                                    if len(p_line) >= 4 and p_line[0].lower() == 'vertex':
+                                        try:
+                                            v_list.append([float(p_line[1]), float(p_line[2]), float(p_line[3])])
+                                        except ValueError:
+                                            pass
+                                num_t = len(v_list) // 3
+                                if num_t == 0:
+                                    raise ValueError("No se encontraron vértices válidos en el archivo ASCII STL.")
+                                triangles_arr = np.array(v_list[:num_t * 3], dtype=np.float64).reshape(-1, 3, 3)
+                                flat_v = triangles_arr.reshape(-1, 3)
+                                vertices_u, inv = np.unique(flat_v, axis=0, return_inverse=True)
+                                faces_u = inv.reshape(-1, 3)
+                                v_arr, f_arr = vertices_u, faces_u
+                                
+                            x_points = v_arr[:, 0]
+                            y_points = v_arr[:, 1]
+                            z_points = v_arr[:, 2]
+                            faces_i = f_arr[:, 0]
+                            faces_j = f_arr[:, 1]
+                            faces_k = f_arr[:, 2]
+                            obj_type = 'mesh'
+                        except Exception as parse_e:
+                            st.error(f"Error procesando el archivo STL: {parse_e}")
                             st.stop()
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.stl') as tmp:
-                            tmp.write(file_obj.getvalue())
-                            tmp_path = tmp.name
-                        mesh = pv.read(tmp_path)
-                        os.unlink(tmp_path)
-                        if not mesh.is_all_triangles:
-                            mesh = mesh.triangulate()
-                        points = mesh.points
-                        x_points = points[:, 0]
-                        y_points = points[:, 1]
-                        z_points = points[:, 2]
-                        faces = mesh.faces.reshape(-1, 4)[:, 1:]
-                        faces_i = faces[:, 0]
-                        faces_j = faces[:, 1]
-                        faces_k = faces[:, 2]
-                        obj_type = 'mesh'
 
                     if x_points is not None:
                         if use_auto_center_imp:
