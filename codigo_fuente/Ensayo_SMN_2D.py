@@ -85,15 +85,6 @@ def show_smn_2d():
     if 'smn_p_inf' not in st.session_state: st.session_state.smn_p_inf = -94.0 
     if 'smn_t_inf' not in st.session_state: st.session_state.smn_t_inf = 15.0
 
-    # --- CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO ---
-    st.markdown("### 🌐 Condiciones del Infinito y Referencia")
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns(4)
-        st.session_state.smn_v_inf = c1.number_input("Velocidad Infinito V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_2d_v_inf_input")
-        st.session_state.smn_rho_inf = c2.number_input("Densidad Infinito ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_2d_rho_inf_input")
-        st.session_state.smn_p_inf = c3.number_input("Presión de Referencia P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_2d_p_inf_input")
-        st.session_state.smn_t_inf = c4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_2d_t_inf_input")
-
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.subheader("📥 Cargar y Guardar Plano 2D")
     st.caption("Subí un archivo CSV de sonda multiagujero para procesar y opcionalmente asociale las condiciones del infinito.")
@@ -109,12 +100,9 @@ def show_smn_2d():
         ts_m = re.search(r'(\d{10,14})', up_smn_2d.name)
         if ts_m:
             timestamp_detectado = ts_m.group(1)
-            st.info(f"📅 Timestamp detectado en el archivo: `{timestamp_detectado}`")
-        else:
-            st.warning("⚠️ No se detectó un timestamp de 12 dígitos en el nombre del archivo. Podés ingresarlo manualmente si subís datos del infinito.")
-            ts_input = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_2d")
-            if ts_input:
-                timestamp_detectado = ts_input
+            st.success(f"📅 Timestamp detectado en el archivo: `{timestamp_detectado}`")
+        elif up_infinito_2d:
+            timestamp_detectado = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_2d")
 
     # Procesamiento del archivo infinito si se sube
     if up_infinito_2d and timestamp_detectado:
@@ -130,9 +118,18 @@ def show_smn_2d():
     if up_smn_2d:
         try:
             up_smn_2d.seek(0)
-            df_raw = pd.read_csv(up_smn_2d, sep=';', decimal=',')
-            if 'Posicion Sonda X[mm]' not in df_raw.columns:
-                df_raw = pd.read_csv(up_smn_2d, sep=',', decimal='.')
+            # INTENTAR LEER CON ENCODING ROBUSTO PARA SOPORTAR CARACTERES ESPECIALES/LATIN-1 (Símbolo º, acentos)
+            try:
+                df_raw = pd.read_csv(up_smn_2d, sep=';', decimal=',', encoding='utf-8')
+            except UnicodeDecodeError:
+                up_smn_2d.seek(0)
+                df_raw = pd.read_csv(up_smn_2d, sep=';', decimal=',', encoding='latin-1')
+            except Exception:
+                up_smn_2d.seek(0)
+                df_raw = pd.read_csv(up_smn_2d, sep=',', decimal='.', encoding='utf-8')
+                if 'Posicion Sonda X[mm]' not in df_raw.columns:
+                    up_smn_2d.seek(0)
+                    df_raw = pd.read_csv(up_smn_2d, sep=',', decimal='.', encoding='latin-1')
             
             required = ['Posicion Sonda X[mm]', 'Posicion Sonda Y[mm]']
             if not all(col in df_raw.columns for col in required):
@@ -201,6 +198,15 @@ def show_smn_2d():
                 st.success(f"✅ Guardado en Drive: {nombre_final_2d}.csv")
             else:
                 st.error("Error al guardar en Drive.")
+
+    # --- CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO (MANUAL FALLBACK) ---
+    st.markdown("---")
+    st.markdown("##### 🌐 Datos del infinito en caso de no poder relacionar archivos")
+    c_inf1, c_inf2, c_inf3, c_inf4 = st.columns(4)
+    st.session_state.smn_v_inf = c_inf1.number_input("Velocidad V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_2d_v_inf_input")
+    st.session_state.smn_rho_inf = c_inf2.number_input("Densidad ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_2d_rho_inf_input")
+    st.session_state.smn_p_inf = c_inf3.number_input("Presión P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_2d_p_inf_input")
+    st.session_state.smn_t_inf = c_inf4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_2d_t_inf_input")
                 
     st.markdown("</div>", unsafe_allow_html=True)
     
