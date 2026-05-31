@@ -246,6 +246,7 @@ def show_smn_4d():
             json_data = df_to_save.to_json(orient='records')
             if auth.save_smn_4d(st.session_state.username, nombre_final_4d, smn_x_4d, json_data):
                 st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/4D): {nombre_final_4d}")
+                st.cache_data.clear()
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -255,7 +256,8 @@ def show_smn_4d():
     st.markdown("### 📥 PASO 2: Selección Multicapa (Múltiples Planos)")
     try:
         planos_drv_smn = auth.get_smn_surfaces_4d(st.session_state.username)
-    except Exception:
+    except Exception as e:
+        st.error(f"⚠️ Error cargando planos 4D desde Drive: {e}")
         planos_drv_smn = []
 
     if not planos_drv_smn:

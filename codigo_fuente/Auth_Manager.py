@@ -515,7 +515,7 @@ def get_smn_files_2d(username):
     folder_id = drive_api.get_folder_smn_2d(username)
     legacy_id = drive_api.get_folder_2d(username)
     
-    @st.cache_data(ttl=300, show_spinner=False)
+    @st.cache_data(ttl=10, show_spinner=False)
     def fetch_all_smn_2d(fid, lid):
         all_res = []
         if fid:
@@ -547,7 +547,7 @@ def get_smn_surfaces_3d(username):
     folder_id = drive_api.get_folder_smn_3d(username)
     legacy_id = drive_api.get_folder_3d(username)
     
-    @st.cache_data(ttl=300, show_spinner=False)
+    @st.cache_data(ttl=10, show_spinner=False)
     def fetch_all_smn_3d(fid, lid):
         all_res = []
         if fid:
@@ -590,7 +590,7 @@ def get_smn_surfaces_4d(username):
     folder_id = drive_api.get_folder_smn_4d(username)
     legacy_id = drive_api.get_folder_4d(username)
     
-    @st.cache_data(ttl=300, show_spinner=False)
+    @st.cache_data(ttl=10, show_spinner=False)
     def fetch_all_smn_4d(fid, lid):
         all_res = []
         if fid:

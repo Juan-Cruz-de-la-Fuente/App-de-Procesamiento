@@ -231,6 +231,7 @@ def show_smn_3d():
             json_data = df_to_save.to_json(orient='records')
             if auth.save_smn_3d(st.session_state.username, nombre_final_3d, json_data):
                 st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/3D): {nombre_final_3d}")
+                st.cache_data.clear()
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -244,7 +245,8 @@ def show_smn_3d():
     if modo_carga_3d == "🗄️ Base de Datos (Drive)":
         try:
             drv_surfs_smn = auth.get_smn_surfaces_3d(st.session_state.username)
-        except:
+        except Exception as e:
+            st.error(f"⚠️ Error cargando superficies desde Drive: {e}")
             drv_surfs_smn = []
             
         if not drv_surfs_smn:

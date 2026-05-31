@@ -234,6 +234,7 @@ def show_smn_2d():
             csv_bytes = df_to_save.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
             if auth.save_smn_2d(st.session_state.username, f"{nombre_final_2d}.csv", csv_bytes):
                 st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/2D): {nombre_final_2d}.csv")
+                st.cache_data.clear()
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -247,7 +248,8 @@ def show_smn_2d():
     if modo_carga_2d == "🗄️ Base de Datos (Drive)":
         try:
             drv_files_smn = auth.get_smn_files_2d(st.session_state.username)
-        except:
+        except Exception as e:
+            st.error(f"⚠️ Error cargando archivos desde Drive: {e}")
             drv_files_smn = []
             
         if not drv_files_smn:
