@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 import io
 import re
+from scipy.interpolate import griddata
 from codigo_fuente import Auth_Manager as auth
 
 def _calcular_valores_infinito_smn(txt_bytes, timestamp_str):
@@ -82,36 +83,32 @@ def _extraer_aoa_smn(nombre):
         
     return 0.0
 
-def calcular_anchos_integracion(y_vals):
+def calcular_anchos_integracion(coords_1d):
     """
-    Calcula los intervalos transversales (dy_i) asociados a cada punto i
-    utilizando el método del punto medio.
+    Calcula los intervalos de integracion (d_i) para un array de coordenadas 1D ordenado
+    utilizando el metodo del punto medio.
     """
-    N = len(y_vals)
-    if N < 2:
-        return np.zeros(N)
+    N = len(coords_1d)
+    if N == 0:
+        return np.array([])
+    if N == 1:
+        return np.array([1.0])  # Ancho unitario de fallback si hay un solo punto
     
-    dy = np.zeros(N)
-    # Extremo inicial: primer punto medio a la mitad del intervalo entre y0 e y1
-    dy[0] = (y_vals[1] - y_vals[0]) / 2.0
-    
-    # Puntos internos: distancia entre el punto medio posterior y el anterior
+    d = np.zeros(N)
+    d[0] = (coords_1d[1] - coords_1d[0]) / 2.0
     for i in range(1, N - 1):
-        dy[i] = (y_vals[i+1] - y_vals[i-1]) / 2.0
-        
-    # Extremo final: distancia entre el último punto medio e y_{N-1}
-    dy[N-1] = (y_vals[N-1] - y_vals[N-2]) / 2.0
-    
-    return dy
+        d[i] = (coords_1d[i+1] - coords_1d[i-1]) / 2.0
+    d[N-1] = (coords_1d[N-1] - coords_1d[N-2]) / 2.0
+    return d
 
 def show_smn_betz():
     st.markdown("""
         <div class="header-container">
             <h1 style="font-size: 3rem; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-            📊 MÉTODO DE BETZ - ENSAYO SMN
+            📊 MÉTODO DE BETZ - EN PLANO Y-Z
             </h1>
             <h2 style="font-size: 1.8rem; margin-bottom: 0; opacity: 0.9;">
-            Cálculo del Coeficiente de Resistencia (Cd) por Pérdida de Momentum en la Estela
+            Integración de Resistencia de Estela Bidimensional 2D
             </h2>
         </div>
     """, unsafe_allow_html=True)
@@ -132,12 +129,12 @@ def show_smn_betz():
     # Historial de sesión para las curvas de arrastre Cd vs AOA
     if 'smn_betz_historial' not in st.session_state:
         st.session_state.smn_betz_historial = pd.DataFrame(columns=[
-            'Archivo', 'AOA [°]', 'Cd []', 'Arrastre [N/m]', 'V_inf [m/s]', 'rho_inf [kg/m³]'
+            'Archivo', 'AOA [°]', 'Cd []', 'Arrastre [N]', 'V_inf [m/s]', 'rho_inf [kg/m³]'
         ])
 
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.subheader("📥 Paso 1: Carga y Sincronización de Datos de Estela")
-    st.caption("Cargá un archivo CSV de sonda multiagujero representativo del barrido transversal detrás del cilindro.")
+    st.caption("Cargá un archivo CSV de sonda multiagujero que contenga el mapeo bidimensional en el plano transversal Y-Z.")
     
     # 1. Cargador de archivos
     c_u1, c_u2 = st.columns(2)
@@ -199,9 +196,9 @@ def show_smn_betz():
             
             required = ['Posicion Sonda X[mm]', 'Posicion Sonda Y[mm]']
             if not all(col in df_raw.columns for col in required):
-                st.error("❌ El archivo CSV no contiene columnas válidas de posición ('Posicion Sonda X[mm]' y 'Posicion Sonda Y[mm]').")
+                st.error("❌ El archivo CSV no contiene columnas válidas de posición.")
             else:
-                st.success(f"✅ Archivo leído correctamente: {len(df_raw)} puntos de control cargados en memoria.")
+                st.success(f"✅ Archivo leído correctamente: {len(df_raw)} puntos de control en el plano.")
                 
                 df_proc = pd.DataFrame()
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
@@ -314,12 +311,12 @@ def show_smn_betz():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PROCESS AND INTEGRATE ---
+    # --- PROCESS AND INTEGRATE IN Y-Z PLANE ---
     if st.session_state.betz_matriz_seleccionada is not None and not st.session_state.betz_matriz_seleccionada.empty:
         df_full = st.session_state.betz_matriz_seleccionada.copy()
         
         st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.subheader("⚙️ Paso 2: Configuración del Algoritmo e Integración Numérica")
+        st.subheader("⚙️ Paso 2: Configuración del Algoritmo e Integración Numérica Y-Z")
         
         c_param1, c_param2 = st.columns(2)
         
@@ -327,24 +324,18 @@ def show_smn_betz():
         default_aoa = _extraer_aoa_smn(st.session_state.betz_filename) if st.session_state.betz_filename else 0.0
         
         with c_param1:
-            st.markdown("##### 📏 Parámetros del Cilindro")
-            d_cyl = st.number_input("Diámetro del Cilindro (d) [mm]:", value=50.0, step=1.0, format="%.1f")
-            l_cyl = st.number_input("Longitud del Cilindro (L) [mm]:", value=300.0, step=10.0, format="%.1f")
+            st.markdown("##### 📏 Geometría del Modelo Ensayo")
+            s_ref = st.number_input(
+                "Área de Referencia (S_ref) [cm²]:", 
+                value=150.0, 
+                step=10.0, 
+                format="%.1f",
+                help="El área de referencia del modelo ensayado utilizada para adimensionalizar y obtener el coeficiente de resistencia Cd."
+            )
             aoa_val = st.number_input("Ángulo de Ataque (α) [°]:", value=default_aoa, step=0.5, format="%.1f")
             
         with c_param2:
-            st.markdown("##### 🧬 Configuración del Método Físico")
-            # Selección de eje transversal de barrido
-            y_range = df_full['Y'].max() - df_full['Y'].min()
-            z_range = df_full['Z'].max() - df_full['Z'].min()
-            default_axis = 'Y' if y_range >= z_range else 'Z'
-            
-            sweep_axis = st.selectbox(
-                "Eje transversal de barrido (Estela):", 
-                ['Y', 'Z'], 
-                index=0 if default_axis == 'Y' else 1,
-                help="El eje físico transversal a la estela por donde se integra el déficit. Por defecto se elige el que tiene mayor rango."
-            )
+            st.markdown("##### 🧬 Configuración de Presiones y Velocidad")
             
             # Opción de presión estática uniforme
             use_const_ps = st.checkbox(
@@ -356,138 +347,112 @@ def show_smn_betz():
             # Opción para calibración de velocidad de corriente libre
             vinf_mode = st.radio(
                 "Velocidad de Corriente Libre (U_∞):",
-                ["Manual / Atmosférica de Referencia", "Calcular desde los bordes del barrido"],
+                ["Manual / Atmosférica de Referencia", "Calcular desde los bordes del barrido Y-Z"],
                 index=0,
                 help="Permite tomar la velocidad de referencia de los sensores del infinito o calcularla promediando los extremos del barrido transversal."
             )
             
-        # --- FILTRADO DE REBANADA / SLICING PARA PLANOS 2D ---
-        other_axis = 'Z' if sweep_axis == 'Y' else 'Y'
-        other_vals = df_full[other_axis].unique()
-        
-        # Si el plano contiene múltiples perfiles de barrido
-        if len(other_vals) > 1:
-            st.markdown("---")
-            st.markdown("##### 🔪 Detección de Plano 2D: Selección de Rebanada")
-            st.warning(f"Se detectaron múltiples posiciones de '{other_axis}' en el archivo. Seleccioná una coordenada específica para el barrido 1D de Betz.")
-            
-            sel_slice = st.select_slider(
-                f"Seleccionar Rebanada en {other_axis} [mm]:",
-                options=sorted(other_vals),
-                value=sorted(other_vals)[len(other_vals)//2]
-            )
-            
-            # Tolerancia para filtrar decimales
-            df_slice = df_full[np.abs(df_full[other_axis] - sel_slice) < 0.1].copy()
-            st.info(f"Puntos en la rebanada seleccionada: **{len(df_slice)}**")
-        else:
-            df_slice = df_full.copy()
-            
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # --- CÁLCULO NUMÉRICO DE BETZ ---
-        if len(df_slice) >= 3:
-            # Limpiar duplicados y ordenar por el eje de barrido transversal
-            df_clean = df_slice.dropna(subset=[sweep_axis, 'Presion_Tot', 'Presion_Est']).copy()
-            df_clean = df_clean.drop_duplicates(subset=[sweep_axis]).sort_values(sweep_axis)
+        # --- CÁLCULO NUMÉRICO DE BETZ EN 2D ---
+        df_clean = df_full.dropna(subset=['Y', 'Z', 'Presion_Tot', 'Presion_Est']).copy()
+        
+        if len(df_clean) >= 4:
+            # 1. Obtener coordenadas únicas y ordenadas en Y y Z
+            y_uniq = np.sort(df_clean['Y'].unique())
+            z_uniq = np.sort(df_clean['Z'].unique())
             
-            y_pts_mm = df_clean[sweep_axis].values
-            y_pts_m = y_pts_mm / 1000.0  # Pasar a metros para integración en SI
+            # 2. Calcular los anchos de punto medio para cada eje único
+            dy_uniq = calcular_anchos_integracion(y_uniq)
+            dz_uniq = calcular_anchos_integracion(z_uniq)
+            
+            # 3. Crear diccionarios para mapeo rápido
+            y_to_dy = dict(zip(y_uniq, dy_uniq))
+            z_to_dz = dict(zip(z_uniq, dz_uniq))
+            
+            # 4. Calcular el área elemental dA_i para cada punto individual en metros cuadrados
+            df_clean['dy_val'] = df_clean['Y'].map(y_to_dy)
+            df_clean['dz_val'] = df_clean['Z'].map(z_to_dz)
+            df_clean['dA_m2'] = (df_clean['dy_val'] / 1000.0) * (df_clean['dz_val'] / 1000.0)
+            
+            # Puntos y valores físicos
+            rho_inf = st.session_state.smn_rho_inf
+            p_inf = st.session_state.smn_p_inf
             
             pt_vals = df_clean['Presion_Tot'].values
             ps_vals = df_clean['Presion_Est'].values
             
-            rho_inf = st.session_state.smn_rho_inf
-            p_inf = st.session_state.smn_p_inf
-            
             # Velocidad de corriente libre
-            if vinf_mode == "Calcular desde los bordes del barrido":
-                # Promediar los extremos (primeros 2 y últimos 2 puntos)
-                edges_pt = np.concatenate([pt_vals[:2], pt_vals[-2:]])
-                edges_ps = np.concatenate([ps_vals[:2], ps_vals[-2:]])
+            if vinf_mode == "Calcular desde los bordes del barrido Y-Z":
+                # Definir puntos en el borde exterior del plano
+                boundary_mask = (df_clean['Y'] == y_uniq[0]) | (df_clean['Y'] == y_uniq[-1]) | \
+                                (df_clean['Z'] == z_uniq[0]) | (df_clean['Z'] == z_uniq[-1])
+                edges_pt = df_clean.loc[boundary_mask, 'Presion_Tot'].values
+                edges_ps = df_clean.loc[boundary_mask, 'Presion_Est'].values
                 edges_q = np.maximum(0.0, edges_pt - edges_ps)
                 edges_u = np.sqrt(2.0 * edges_q / rho_inf)
-                u_inf = float(np.mean(edges_u))
-                st.success(f"Velocidad de corriente libre calculada de los bordes: **U_∞ = {u_inf:.3f} m/s**")
+                u_inf = float(np.mean(edges_u)) if len(edges_u) > 0 else float(st.session_state.smn_v_inf)
+                st.success(f"Velocidad de corriente libre calculada de los bordes del plano: **U_∞ = {u_inf:.3f} m/s**")
             else:
                 u_inf = float(st.session_state.smn_v_inf)
             
-            # Aplicar Bernoulli para velocidad local u(y)
+            # Bernoulli local para u(y, z)
             if use_const_ps:
-                # Usar presión estática uniforme P_s = P_∞
-                # st.session_state.smn_p_inf es la presión en el infinito, pero típicamente los transductores de estela miden presión diferencial o relativa.
-                # Si st.session_state.smn_p_inf es absoluta y Pt es relativa, tenemos cuidado.
-                # Por Bernoulli local: q_local = Pt(y) - Ps_elegida
-                # Si asumimos estática uniforme, q_local = Pt(y) - Ps_borde (o Pt - p_inf si p_inf es estática)
-                # Una forma muy robusta es estimar la presión estática libre como el promedio en los extremos de ps_vals
-                ps_ref = np.mean(np.concatenate([ps_vals[:2], ps_vals[-2:]])) if len(ps_vals) >= 4 else p_inf
+                # Estimar presión estática libre como el promedio en los bordes
+                boundary_mask = (df_clean['Y'] == y_uniq[0]) | (df_clean['Y'] == y_uniq[-1]) | \
+                                (df_clean['Z'] == z_uniq[0]) | (df_clean['Z'] == z_uniq[-1])
+                ps_ref = np.mean(df_clean.loc[boundary_mask, 'Presion_Est'].values) if boundary_mask.any() else p_inf
                 q_local = np.maximum(0.0, pt_vals - ps_ref)
             else:
-                # Usar la estática local real en la estela
                 q_local = np.maximum(0.0, pt_vals - ps_vals)
                 
             u_local = np.sqrt(2.0 * q_local / rho_inf)
             
-            # Déficit de Momentum: rho * u * (U_∞ - u)
+            # Déficit local de momentum
             momentum_deficit = rho_inf * u_local * (u_inf - u_local)
+            df_clean['u_local'] = u_local
+            df_clean['deficit'] = momentum_deficit
             
-            # Calcular intervalos de integración transversales dy_i usando el método de puntos medios
-            dy_m = calcular_anchos_integracion(y_pts_m)
-            
-            # Integrar resistencia por unidad de longitud (Drag per unit span)
-            # D' = sum (deficit_i * dy_i)
-            drag_per_span_elements = momentum_deficit * dy_m
-            drag_per_span = np.sum(drag_per_span_elements)
-            
-            # Fuerza de arrastre total
-            drag_total = drag_per_span * (l_cyl / 1000.0)
+            # Integrar resistencia total: Drag = sum (deficit_i * dA_i)
+            df_clean['drag_elemental'] = momentum_deficit * df_clean['dA_m2']
+            drag_total = float(df_clean['drag_elemental'].sum())
             
             # Coeficiente de Resistencia Cd
             q_inf = 0.5 * rho_inf * (u_inf ** 2)
-            d_meters = d_cyl / 1000.0
-            l_meters = l_cyl / 1000.0
+            s_ref_m2 = (s_ref / 10000.0)  # Convertir cm² a m²
             
             cd_val = 0.0
-            if q_inf > 0 and d_meters > 0:
-                cd_val = drag_per_span / (q_inf * d_meters)
+            if q_inf > 0 and s_ref_m2 > 0:
+                cd_val = drag_total / (q_inf * s_ref_m2)
                 
             # --- CARD DE MÉTRICAS PRINCIPALES ---
-            st.markdown("### 📈 Coeficiente de Resistencia de Betz")
-            c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+            st.markdown("### 📈 Coeficiente de Resistencia 2D (Betz)")
+            c_m1, c_m2, c_m3 = st.columns(3)
             
             with c_m1:
                 st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.2rem; border-radius: 12px; text-align: center;">
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Coeficiente Cd</div>
-                    <div style="font-size: 3rem; font-weight: 900; color: #10b981; margin: 0.5rem 0;">{cd_val:.4f}</div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Adimensional</div>
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 0.95rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Coeficiente de Resistencia Cd</div>
+                    <div style="font-size: 3.5rem; font-weight: 900; color: #10b981; margin: 0.5rem 0;">{cd_val:.4f}</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Base S_ref = {s_ref} cm²</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             with c_m2:
                 st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.2rem; border-radius: 12px; text-align: center;">
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Arrastre Unitario (D')</div>
-                    <div style="font-size: 2.2rem; font-weight: 800; color: #3b82f6; margin: 0.8rem 0;">{drag_per_span:.4f} <span style="font-size: 1.2rem;">N/m</span></div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Por metro de envergadura</div>
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 0.95rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Fuerza de Arrastre Total (D)</div>
+                    <div style="font-size: 3rem; font-weight: 800; color: #3b82f6; margin: 0.7rem 0;">{drag_total:.4f} <span style="font-size: 1.5rem;">N</span></div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Integración en plano Y-Z</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             with c_m3:
                 st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.2rem; border-radius: 12px; text-align: center;">
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Fuerza Total (D)</div>
-                    <div style="font-size: 2.2rem; font-weight: 800; color: #f59e0b; margin: 0.8rem 0;">{drag_total:.4f} <span style="font-size: 1.2rem;">N</span></div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Cilindro de L={l_cyl} mm</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with c_m4:
-                st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.2rem; border-radius: 12px; text-align: center;">
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Ángulo de Ataque (α)</div>
-                    <div style="font-size: 2.5rem; font-weight: 800; color: #a855f7; margin: 0.6rem 0;">{aoa_val:.1f}°</div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">De: {st.session_state.betz_filename[:15]}...</div>
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 0.95rem; color: rgba(255,255,255,0.6); text-transform: uppercase;">Ángulo de Ataque (α)</div>
+                    <div style="font-size: 3rem; font-weight: 800; color: #a855f7; margin: 0.7rem 0;">{aoa_val:.1f}°</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">Extraído: {st.session_state.betz_filename[:15]}...</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -507,7 +472,7 @@ def show_smn_betz():
                         'Archivo': st.session_state.betz_filename,
                         'AOA [°]': aoa_val,
                         'Cd []': cd_val,
-                        'Arrastre [N/m]': drag_per_span,
+                        'Arrastre [N]': drag_total,
                         'V_inf [m/s]': u_inf,
                         'rho_inf [kg/m³]': rho_inf
                     }])
@@ -517,159 +482,165 @@ def show_smn_betz():
                     st.success(f"✅ Punto guardado correctamente en el historial: α={aoa_val}°, Cd={cd_val:.4f}")
                     st.rerun()
 
-            # --- GRÁFICOS INTERACTIVOS EN PESTAÑAS ---
+            # --- MAPAS DE CONTORNO EN PESTAÑAS 2D ---
             st.markdown("<br>", unsafe_allow_html=True)
             t_plot1, t_plot2, t_plot3 = st.tabs([
-                "🌫️ Pérdida de Momentum (Integral de Resistencia)", 
-                "⚡ Perfil de Velocidades (u vs U_∞)", 
-                "🎈 Distribución de Presiones (Pt & Ps)"
+                "🌫️ Mapa 2D de Pérdida de Momentum", 
+                "⚡ Perfil de Velocidades de la Estela u(y,z)", 
+                "🎈 Distribución de Presión Total Pt(y,z)"
             ])
             
-            # Pestaña 1: Integral de Pérdida de Momentum
+            # Preparar interpolación 2D para graficación suave
+            y_coords = df_clean['Y'].values
+            z_coords = df_clean['Z'].values
+            
+            grid_y = np.linspace(y_coords.min(), y_coords.max(), 100)
+            grid_z = np.linspace(z_coords.min(), z_coords.max(), 100)
+            Gy, Gz = np.meshgrid(grid_y, grid_z)
+            
+            # Pestaña 1: Déficit de momentum en 2D
             with t_plot1:
+                G_def = griddata((y_coords, z_coords), momentum_deficit, (Gy, Gz), method='cubic')
                 fig1 = go.Figure()
-                # Sombreado bajo la curva del déficit de momentum
+                fig1.add_trace(go.Contour(
+                    x=grid_y, y=grid_z, z=G_def,
+                    colorscale='Turbo',
+                    colorbar=dict(title="Déficit [N/m³]"),
+                    hovertemplate='Y: %{x:.1f} mm<br>Z: %{y:.1f} mm<br>Déficit: %{z:.2f} N/m³<extra></extra>'
+                ))
                 fig1.add_trace(go.Scatter(
-                    x=y_pts_mm, y=momentum_deficit,
-                    mode='lines+markers',
-                    name='Déficit de Momentum local',
-                    line=dict(color='#ef4444', width=3),
-                    fill='tozeroy',
-                    fillcolor='rgba(239, 68, 68, 0.15)',
-                    hovertemplate='Y: %{x:.2f} mm<br>Déficit: %{y:.3f} N/m³<extra></extra>'
+                    x=y_coords, y=z_coords,
+                    mode='markers',
+                    marker=dict(size=3, color='white', opacity=0.4),
+                    name='Puntos medidos'
                 ))
-                
                 fig1.update_layout(
-                    title="Distribución del Déficit de Cantidad de Movimiento (Estela)",
-                    xaxis_title=f"{sweep_axis} (Transversal) [mm]",
-                    yaxis_title="Déficit de Momentum [N/m³]",
-                    height=500,
+                    title="Mapeo 2D del Déficit de Cantidad de Movimiento (Estela)",
+                    xaxis_title="Y (Envergadura) [mm]",
+                    yaxis_title="Z (Altura) [mm]",
+                    height=600,
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="white"),
-                    hovermode='x'
+                    font=dict(color="white")
                 )
+                fig1.update_xaxes(scaleanchor="y", scaleratio=1)
                 st.plotly_chart(fig1, use_container_width=True)
-                st.caption("💡 El sombreado rojo representa el área física integrada. A mayor déficit de momentum (área sombreada), mayor es la resistencia total del cilindro.")
+                st.caption("💡 La zona con mayor intensidad de color representa el núcleo de la estela perturbada donde la resistencia se concentra.")
 
-            # Pestaña 2: Perfil de Velocidades
+            # Pestaña 2: Campo de velocidades en 2D
             with t_plot2:
+                G_u = griddata((y_coords, z_coords), u_local, (Gy, Gz), method='cubic')
                 fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(
-                    x=y_pts_mm, y=u_local,
-                    mode='lines+markers',
-                    name='Velocidad local en la estela u(y)',
-                    line=dict(color='#3b82f6', width=3),
-                    hovertemplate='Y: %{x:.2f} mm<br>Velocidad: %{y:.2f} m/s<extra></extra>'
+                fig2.add_trace(go.Contour(
+                    x=grid_y, y=grid_z, z=G_u,
+                    colorscale='Turbo',
+                    colorbar=dict(title="Velocidad [m/s]"),
+                    hovertemplate='Y: %{x:.1f} mm<br>Z: %{y:.1f} mm<br>u: %{z:.2f} m/s<extra></extra>'
                 ))
                 fig2.add_trace(go.Scatter(
-                    x=y_pts_mm, y=np.full_like(y_pts_mm, u_inf),
-                    mode='lines',
-                    name='Corriente Libre U_∞',
-                    line=dict(color='#10b981', dash='dash', width=2),
-                    hovertemplate='Corriente Libre: %{y:.2f} m/s<extra></extra>'
+                    x=y_coords, y=z_coords,
+                    mode='markers',
+                    marker=dict(size=3, color='white', opacity=0.4),
+                    name='Puntos medidos'
                 ))
-                
                 fig2.update_layout(
-                    title="Perfil del Déficit de Velocidad en la Estela",
-                    xaxis_title=f"{sweep_axis} (Transversal) [mm]",
-                    yaxis_title="Velocidad [m/s]",
-                    height=500,
+                    title="Mapeo 2D del Campo de Velocidades en la Estela",
+                    xaxis_title="Y (Envergadura) [mm]",
+                    yaxis_title="Z (Altura) [mm]",
+                    height=600,
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="white"),
-                    hovermode='x'
+                    font=dict(color="white")
                 )
+                fig2.update_xaxes(scaleanchor="y", scaleratio=1)
                 st.plotly_chart(fig2, use_container_width=True)
 
-            # Pestaña 3: Distribución de Presiones
+            # Pestaña 3: Presión Total en 2D
             with t_plot3:
+                G_pt = griddata((y_coords, z_coords), pt_vals, (Gy, Gz), method='cubic')
                 fig3 = go.Figure()
-                fig3.add_trace(go.Scatter(
-                    x=y_pts_mm, y=pt_vals,
-                    mode='lines+markers',
-                    name='Presión Total (Pt)',
-                    line=dict(color='#c084fc', width=2),
-                    hovertemplate='Y: %{x:.2f} mm<br>Pt: %{y:.1f} Pa<extra></extra>'
+                fig3.add_trace(go.Contour(
+                    x=grid_y, y=grid_z, z=G_pt,
+                    colorscale='Turbo',
+                    colorbar=dict(title="Presión [Pa]"),
+                    hovertemplate='Y: %{x:.1f} mm<br>Z: %{y:.1f} mm<br>Pt: %{z:.1f} Pa<extra></extra>'
                 ))
                 fig3.add_trace(go.Scatter(
-                    x=y_pts_mm, y=ps_vals,
-                    mode='lines+markers',
-                    name='Presión Estática (Ps)',
-                    line=dict(color='#60a5fa', width=2),
-                    hovertemplate='Y: %{x:.2f} mm<br>Ps: %{y:.1f} Pa<extra></extra>'
+                    x=y_coords, y=z_coords,
+                    mode='markers',
+                    marker=dict(size=3, color='white', opacity=0.4),
+                    name='Puntos medidos'
                 ))
-                
                 fig3.update_layout(
-                    title="Distribución de Presiones en la Estela",
-                    xaxis_title=f"{sweep_axis} (Transversal) [mm]",
-                    yaxis_title="Presión [Pa]",
-                    height=500,
+                    title="Distribución de Presión Total Pt en el Plano Y-Z",
+                    xaxis_title="Y (Envergadura) [mm]",
+                    yaxis_title="Z (Altura) [mm]",
+                    height=600,
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="white"),
-                    hovermode='x'
+                    font=dict(color="white")
                 )
+                fig3.update_xaxes(scaleanchor="y", scaleratio=1)
                 st.plotly_chart(fig3, use_container_width=True)
 
-            # --- CONSIDERACIONES CRÍTICAS DE LABORATORIO ---
+            # --- CONSIDERACIONES CRÍTICAS DE LABORATORIO 2D ---
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-            st.subheader("⚠️ Consideraciones Críticas y Validación de Ensayos")
+            st.subheader("⚠️ Diagnóstico de Estela y Validaciones en el Plano 2D")
             
             col_cr1, col_cr2 = st.columns(2)
             
             with col_cr1:
-                st.markdown("##### 📏 Límites e Integración en Extremos")
-                u_esq_izq = u_local[0]
-                u_esq_der = u_local[-1]
-                rec_izq = (u_esq_izq / u_inf) * 100
-                rec_der = (u_esq_der / u_inf) * 100
+                st.markdown("##### 📐 Límites del Plano y Recuperación de Flujo")
+                # Calcular velocidad promedio de los puntos que forman los bordes del plano medido
+                boundary_mask = (df_clean['Y'] == y_uniq[0]) | (df_clean['Y'] == y_uniq[-1]) | \
+                                (df_clean['Z'] == z_uniq[0]) | (df_clean['Z'] == z_uniq[-1])
+                boundary_u = u_local[boundary_mask]
+                avg_boundary_u = np.mean(boundary_u) if len(boundary_u) > 0 else 0.0
+                rec_percent = (avg_boundary_u / u_inf) * 100
                 
-                limite_sano = rec_izq >= 95.0 and rec_der >= 95.0
+                limite_sano = rec_percent >= 95.0
                 
                 if limite_sano:
-                    st.success(f"✅ **Límites de Estela Óptimos**:\n- Extremo Izquierdo: {rec_izq:.1f}% de U_∞\n- Extremo Derecho: {rec_der:.1f}% de U_∞\n\nEl barrido cubre completamente la zona de perturbación.")
+                    st.success(f"✅ **Límites de Estela Óptimos**:\n- Promedio en Bordes: {rec_percent:.1f}% de U_∞\n\nEl plano de medición contiene perfectamente la estela sin fugas significativas de momentum.")
                 else:
-                    st.warning(f"⚠️ **Recuperación incompleta en los extremos del barrido**:\n- Izquierdo: {rec_izq:.1f}% de U_∞\n- Derecho: {rec_der:.1f}% de U_∞\n\n**Recomendación**: La velocidad no regresó completamente a la corriente libre en los extremos. La resistencia integrada (Cd) podría estar ligeramente subestimada. Es aconsejable ampliar el rango transversal del barrido en el túnel de viento.")
+                    st.warning(f"⚠️ **Recuperación incompleta en los bordes del plano**:\n- Promedio en Bordes: {rec_percent:.1f}% de U_∞\n\n**Recomendación**: La velocidad en el perímetro del plano no regresó por completo a la corriente libre. La resistencia total ($C_d$) podría estar subestimada. Aconsejamos ensanchar el barrido en Y y Z para capturar todo el déficit.")
             
             with col_cr2:
-                st.markdown("##### ⚖️ Simetría del Perfil de la Estela")
-                # Centroide de momentum
-                num_cent = np.sum(y_pts_mm * drag_per_span_elements)
-                den_cent = np.sum(drag_per_span_elements)
-                y_cent = num_cent / den_cent if den_cent > 0 else 0.0
+                st.markdown("##### ⚖️ Centrado y Simetría Bidimensional de la Estela")
                 
-                # Centro geométrico del barrido
-                y_geom = (y_pts_mm[0] + y_pts_mm[-1]) / 2.0
-                desfase = np.abs(y_cent - y_geom)
+                # Centroide de momentum en Y y Z (Centro del déficit)
+                drag_elem = df_clean['drag_elemental'].values
+                sum_drag = drag_total
                 
-                # Índice de Simetría dividiendo en lados izquierdo y derecho del centroide
-                izq_mask = y_pts_mm < y_cent
-                der_mask = y_pts_mm >= y_cent
-                drag_izq = np.sum(drag_per_span_elements[izq_mask])
-                drag_der = np.sum(drag_per_span_elements[der_mask])
-                
-                if drag_izq + drag_der > 0:
-                    ind_sim = (1.0 - (np.abs(drag_izq - drag_der) / (drag_izq + drag_der))) * 100
+                if sum_drag > 0:
+                    y_cent = float(np.sum(y_coords * drag_elem) / sum_drag)
+                    z_cent = float(np.sum(z_coords * drag_elem) / sum_drag)
                 else:
-                    ind_sim = 100.0
+                    y_cent, z_cent = 0.0, 0.0
+                    
+                # Centro geométrico del plano de medición
+                y_geom = (y_uniq[0] + y_uniq[-1]) / 2.0
+                z_geom = (z_uniq[0] + z_uniq[-1]) / 2.0
+                
+                desfase_y = np.abs(y_cent - y_geom)
+                desfase_z = np.abs(z_cent - z_geom)
                 
                 st.markdown(f"""
-                - **Centroide de la estela (Déficit)**: `{y_cent:.2f} mm`
-                - **Centro Geométrico del Barrido**: `{y_geom:.2f} mm`
-                - **Desfase del centroide**: `{desfase:.2f} mm`
+                - **Centroide de Estela (Def.)**: `Y = {y_cent:.1f} mm, Z = {z_cent:.1f} mm`
+                - **Centro Geométrico del Mapeo**: `Y = {y_geom:.1f} mm, Z = {z_geom:.1f} mm`
+                - **Desalineación Espacial**: `ΔY = {desfase_y:.1f} mm, ΔZ = {desfase_z:.1f} mm`
                 """)
                 
-                if ind_sim >= 85.0:
-                    st.success(f"⚖️ **Alta simetría del perfil**: `{ind_sim:.1f}%` de coincidencia entre ambas mitades del barrido.")
+                if desfase_y < (y_uniq[-1] - y_uniq[0]) * 0.15 and desfase_z < (z_uniq[-1] - z_uniq[0]) * 0.15:
+                    st.success("⚖️ **Estela Alineada**: El núcleo de la estela se encuentra centrado dentro de la malla de medición.")
                 else:
-                    st.warning(f"⚠️ **Perfil asimétrico**: `{ind_sim:.1f}%` de coincidencia entre ambas mitades.\n\nRevisar posible desalineación física de la sonda con el flujo o inestabilidad severa del túnel.")
+                    st.warning("⚠️ **Estela Desalineada / Asimétrica**: El centro de la estela está significativamente desplazado hacia un lateral del plano de medición. Revisar alineación del modelo o centrar la grilla de la sonda.")
                     
             st.markdown("</div>", unsafe_allow_html=True)
             
         else:
-            st.warning("⚠️ Se necesitan al menos 3 puntos de medición válidos en el barrido transversal para realizar los cálculos del método de Betz.")
+            st.warning("⚠️ Se necesitan al menos 4 puntos de medición válidos en el plano para realizar la triangulación e interpolación Y-Z.")
 
     # --- PESTAÑA HISTORIAL Y POLAR DE ARRASTRE Cd vs AOA ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -677,19 +648,19 @@ def show_smn_betz():
     st.subheader("📊 Historial de Puntos y Curva Polar de Arrastre (Cd vs α)")
     
     if st.session_state.smn_betz_historial.empty:
-        st.info("Aún no has guardado puntos en el historial de esta sesión. Realizá cálculos de Betz y guardalos para graficar la polar de arrastre del cilindro.")
+        st.info("Aún no has guardado puntos en el historial de esta sesión. Guardá cálculos para graficar la polar de arrastre del modelo.")
     else:
         c_h1, c_h2 = st.columns([1.2, 1.8])
         
         with c_h1:
             st.markdown("##### Puntos Registrados")
             st.dataframe(st.session_state.smn_betz_historial[[
-                'AOA [°]', 'Cd []', 'Arrastre [N/m]'
+                'AOA [°]', 'Cd []', 'Arrastre [N]'
             ]], use_container_width=True, hide_index=True)
             
             if st.button("🗑️ Limpiar Historial de Puntos", use_container_width=True):
                 st.session_state.smn_betz_historial = pd.DataFrame(columns=[
-                    'Archivo', 'AOA [°]', 'Cd []', 'Arrastre [N/m]', 'V_inf [m/s]', 'rho_inf [kg/m³]'
+                    'Archivo', 'AOA [°]', 'Cd []', 'Arrastre [N]', 'V_inf [m/s]', 'rho_inf [kg/m³]'
                 ])
                 st.success("Historial de la sesión borrado.")
                 st.rerun()
@@ -704,7 +675,7 @@ def show_smn_betz():
                 mode='lines+markers',
                 marker=dict(size=8, color='#a855f7'),
                 line=dict(color='#a855f7', width=3),
-                name='Arrastre del Cilindro',
+                name='Arrastre del Modelo',
                 hovertemplate='AOA: %{x:.1f}°<br>Cd: %{y:.4f}<extra></extra>'
             ))
             
