@@ -271,8 +271,7 @@ def render_navbar():
     # --- HORIZONTAL NAVIGATION BAR ---
     if st.session_state.get('logged_in'):
         with st.container():
-            # Layout principal
-            c_sl, c1, c2, c3, c4, c_smn, c5, c6, c_sr = st.columns([0.5, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 0.5])
+            c_sl, c1, c2, c_smn, c3, c4, c5, c6, c_sr = st.columns([0.5, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 0.5])
             
             with c1:
                 t1 = "primary" if st.session_state.seccion_actual == 'inicio' else "secondary"
@@ -379,18 +378,6 @@ def render_navbar():
                         st.session_state.seccion_actual = 'interpolacion_aoa'
                         st.rerun()
 
-            with c3:
-                t3 = "primary" if st.session_state.seccion_actual == 'ensayo_betz' else "secondary"
-                if st.button("🧪 ENSAYO DE BETZ", use_container_width=True, type=t3):
-                     st.session_state.seccion_actual = 'ensayo_betz'
-                     st.rerun()
-
-            with c4:
-                t4 = "primary" if st.session_state.seccion_actual == 'modelos' else "secondary"
-                if st.button("📦 MODELOS", use_container_width=True, type=t4):
-                     st.session_state.seccion_actual = 'modelos'
-                     st.rerun()
-
             with c_smn:
                 with st.popover("🧪 ENSAYO SMN", use_container_width=True):
                     if st.button("📈 Vis. SMN 2D", use_container_width=True, key="legacy_btn_smn_2d"):
@@ -402,6 +389,18 @@ def render_navbar():
                     if st.button("🌌 Vis. SMN 4D", use_container_width=True, key="legacy_btn_smn_4d"):
                         st.session_state.seccion_actual = 'smn_4d'
                         st.rerun()
+
+            with c3:
+                t3 = "primary" if st.session_state.seccion_actual == 'ensayo_betz' else "secondary"
+                if st.button("🧪 ENSAYO DE BETZ", use_container_width=True, type=t3):
+                     st.session_state.seccion_actual = 'ensayo_betz'
+                     st.rerun()
+
+            with c4:
+                t4 = "primary" if st.session_state.seccion_actual == 'modelos' else "secondary"
+                if st.button("📦 MODELOS", use_container_width=True, type=t4):
+                     st.session_state.seccion_actual = 'modelos'
+                     st.rerun()
 
             with c5:
                 t5 = "primary" if st.session_state.seccion_actual == 'configuracion' else "secondary"

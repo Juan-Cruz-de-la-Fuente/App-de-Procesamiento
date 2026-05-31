@@ -147,7 +147,7 @@ def login_page():
 def render_navbar():
     if st.session_state.get('logged_in'):
         with st.container():
-            c_sl, c1, c2, c3, c_df, c_smn, c4, c5, c_sr = st.columns([0.6, 1.4, 1.6, 1.4, 1.6, 1.6, 1.4, 1.4, 0.6])
+            c_sl, c1, c2, c_smn, c_df, c3, c4, c5, c_sr = st.columns([0.6, 1.4, 1.6, 1.6, 1.6, 1.4, 1.4, 1.4, 0.6])
             
             with c1:
                 if st.button("🚀 INICIO", use_container_width=True, 
@@ -182,18 +182,6 @@ def render_navbar():
                         st.session_state.seccion_actual = 'herramientas'
                         st.rerun()
 
-            with c3:
-                if st.button("📦 MODELOS", use_container_width=True, 
-                             type="primary" if st.session_state.seccion_actual == 'modelos' else "secondary"):
-                    st.session_state.seccion_actual = 'modelos'
-                    st.rerun()
-
-            with c_df:
-                if st.button("🎨 DATA FUSION", use_container_width=True, 
-                             type="primary" if st.session_state.seccion_actual == 'data_fusion' else "secondary"):
-                    st.session_state.seccion_actual = 'data_fusion'
-                    st.rerun()
-
             with c_smn:
                 with st.popover("🧪 ENSAYO SMN", use_container_width=True):
                     if st.button("📈 Vis. SMN 2D", use_container_width=True):
@@ -205,6 +193,18 @@ def render_navbar():
                     if st.button("🌌 Vis. SMN 4D", use_container_width=True):
                         st.session_state.seccion_actual = 'smn_4d'
                         st.rerun()
+
+            with c_df:
+                if st.button("🎨 DATA FUSION", use_container_width=True, 
+                             type="primary" if st.session_state.seccion_actual == 'data_fusion' else "secondary"):
+                    st.session_state.seccion_actual = 'data_fusion'
+                    st.rerun()
+
+            with c3:
+                if st.button("📦 MODELOS", use_container_width=True, 
+                             type="primary" if st.session_state.seccion_actual == 'modelos' else "secondary"):
+                    st.session_state.seccion_actual = 'modelos'
+                    st.rerun()
 
             with c4:
                 if st.button("⚙️ CONFIG", use_container_width=True, 

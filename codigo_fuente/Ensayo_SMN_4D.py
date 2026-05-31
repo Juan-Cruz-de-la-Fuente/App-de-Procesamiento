@@ -189,6 +189,7 @@ def show_smn_4d():
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
             
+    op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn_4d = st.selectbox("Seleccionar Plano a Guardar en Drive (4D):", op_smn, key="sel_smn_4d_save")
     smn_x_4d = st.number_input("Posición en Estación X [mm]:", value=150.0, step=10.0, key="smn_x_4d")
     smn_aoa_4d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_4d")

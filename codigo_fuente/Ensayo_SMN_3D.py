@@ -174,6 +174,7 @@ def show_smn_3d():
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
             
+    op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn_3d = st.selectbox("Seleccionar Archivo a Guardar en Drive (3D):", op_smn, key="sel_smn_3d_save")
     smn_x_3d = st.number_input("Posición del plano X [mm]:", value=150.0, step=10.0, key="smn_x_3d")
     smn_aoa_3d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_3d")
