@@ -89,6 +89,7 @@ def show_smn_2d():
     st.subheader("📥 Cargar y Guardar Plano 2D")
     st.caption("Subí un archivo CSV de sonda multiagujero para procesar y opcionalmente asociale las condiciones del infinito.")
     
+    # 1. Cargadores de archivos
     c_u1, c_u2 = st.columns(2)
     with c_u1:
         up_smn_2d = st.file_uploader("Subir archivo de ensayo SMN (.csv) - Ej: datos_fluido_0AOA", type=['csv'], key="up_smn_2d")
@@ -104,7 +105,7 @@ def show_smn_2d():
         elif up_infinito_2d:
             timestamp_detectado = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_2d")
 
-    # Procesamiento del archivo infinito si se sube
+    # Vincular valores del infinito
     if up_infinito_2d and timestamp_detectado:
         inf_vals = _calcular_valores_infinito_smn(up_infinito_2d.read(), timestamp_detectado)
         if inf_vals:
@@ -112,13 +113,20 @@ def show_smn_2d():
             st.session_state.smn_rho_inf = inf_vals['rho_inf']
             st.session_state.smn_p_inf = inf_vals['p_inf']
             st.session_state.smn_t_inf = inf_vals['t_inf']
+            
+            # Sincronizar inputs manuales de la UI
+            st.session_state.smn_2d_v_inf_input = inf_vals['v_inf']
+            st.session_state.smn_2d_rho_inf_input = inf_vals['rho_inf']
+            st.session_state.smn_2d_p_inf_input = inf_vals['p_inf']
+            st.session_state.smn_2d_t_inf_input = inf_vals['t_inf']
+            
             st.success(f"✅ Valores del infinito vinculados automáticamente: V_∞={inf_vals['v_inf']} m/s, ρ_∞={inf_vals['rho_inf']:.4f} kg/m³")
             st.rerun()
 
+    # Procesar archivo CSV subido
     if up_smn_2d:
         try:
             up_smn_2d.seek(0)
-            # INTENTAR LEER CON ENCODING ROBUSTO PARA SOPORTAR CARACTERES ESPECIALES/LATIN-1 (Símbolo º, acentos)
             try:
                 df_raw = pd.read_csv(up_smn_2d, sep=';', decimal=',', encoding='utf-8')
             except UnicodeDecodeError:
@@ -141,7 +149,6 @@ def show_smn_2d():
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
                 df_proc['Z'] = df_raw['Posicion Sonda Y[mm]'].astype(float)
                 
-                # SÓLO las 6 variables físicas de interés (excluyendo Alfa, Beta, Cp_Alfa, Cp_Beta)
                 var_mappings = {
                     'Presion_Est': 'Presion estatica [Pa]',
                     'Presion_Tot': 'Presion total [Pa]',
@@ -158,6 +165,7 @@ def show_smn_2d():
                     else:
                         df_proc[k] = 0.0
                 
+                # Coeficientes calculados dinámicamente
                 q_inf = 0.5 * st.session_state.smn_rho_inf * (st.session_state.smn_v_inf ** 2)
                 if q_inf != 0:
                     df_proc['Cp_Est'] = (df_proc['Presion_Est'] - st.session_state.smn_p_inf) / q_inf
@@ -170,7 +178,19 @@ def show_smn_2d():
                 st.session_state.smn_archivos_memoria[name_mem] = df_proc
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
-            
+
+    # 2. CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO (MANUAL FALLBACK)
+    st.markdown("---")
+    st.markdown("##### 🌐 Datos del infinito en caso de no poder relacionar archivos")
+    c_inf1, c_inf2, c_inf3, c_inf4 = st.columns(4)
+    st.session_state.smn_v_inf = c_inf1.number_input("Velocidad V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_2d_v_inf_input")
+    st.session_state.smn_rho_inf = c_inf2.number_input("Densidad ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_2d_rho_inf_input")
+    st.session_state.smn_p_inf = c_inf3.number_input("Presión P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_2d_p_inf_input")
+    st.session_state.smn_t_inf = c_inf4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_2d_t_inf_input")
+
+    # 3. Parámetros de guardado y Botón de Subida a Google Drive
+    st.markdown("---")
+    st.markdown("##### 💾 Guardar en Google Drive")
     op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn = st.selectbox("Seleccionar Archivo a Guardar en Drive:", op_smn, key="sel_smn_2d_save")
     
@@ -187,7 +207,16 @@ def show_smn_2d():
             df_to_save['Pos_X'] = smn_x
             df_to_save['AOA'] = smn_aoa
             
-            # VINCULAR Y GUARDAR VALORES DEL INFINITO EN EL CSV
+            # RECALCULAR DE FORMA SEGURA LOS COEFICIENTES CP AL MOMENTO DE GUARDAR
+            q_inf = 0.5 * st.session_state.smn_rho_inf * (st.session_state.smn_v_inf ** 2)
+            if q_inf != 0:
+                df_to_save['Cp_Est'] = (df_to_save['Presion_Est'] - st.session_state.smn_p_inf) / q_inf
+                df_to_save['Cp_Tot'] = (df_to_save['Presion_Tot'] - st.session_state.smn_p_inf) / q_inf
+            else:
+                df_to_save['Cp_Est'] = 0.0
+                df_to_save['Cp_Tot'] = 0.0
+            
+            # GUARDAR VALORES DEL INFINITO EN LAS COLUMNAS DEL CSV
             df_to_save['V_inf'] = st.session_state.smn_v_inf
             df_to_save['rho_inf'] = st.session_state.smn_rho_inf
             df_to_save['P_inf'] = st.session_state.smn_p_inf
@@ -198,19 +227,10 @@ def show_smn_2d():
                 st.success(f"✅ Guardado en Drive: {nombre_final_2d}.csv")
             else:
                 st.error("Error al guardar en Drive.")
-
-    # --- CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO (MANUAL FALLBACK) ---
-    st.markdown("---")
-    st.markdown("##### 🌐 Datos del infinito en caso de no poder relacionar archivos")
-    c_inf1, c_inf2, c_inf3, c_inf4 = st.columns(4)
-    st.session_state.smn_v_inf = c_inf1.number_input("Velocidad V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_2d_v_inf_input")
-    st.session_state.smn_rho_inf = c_inf2.number_input("Densidad ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_2d_rho_inf_input")
-    st.session_state.smn_p_inf = c_inf3.number_input("Presión P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_2d_p_inf_input")
-    st.session_state.smn_t_inf = c_inf4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_2d_t_inf_input")
                 
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # 3. Carga y Visualización
+    # 4. Carga y Visualización
     st.markdown("### 📥 PASO 2: Selección de Plano para Visualización 2D")
     modo_carga_2d = st.radio("Carga desde:", ["🗄️ Base de Datos (Drive)", "🧠 Memoria de Sesión"], horizontal=True, key="modo_carga_smn_2d")
     
@@ -238,11 +258,21 @@ def show_smn_2d():
                             
                             # RESTAURAR VALORES DEL INFINITO GUARDADOS EN EL ARCHIVO
                             if 'V_inf' in df_active.columns:
-                                st.session_state.smn_v_inf = float(df_active['V_inf'].iloc[0])
-                                st.session_state.smn_rho_inf = float(df_active['rho_inf'].iloc[0])
-                                st.session_state.smn_p_inf = float(df_active['P_inf'].iloc[0])
-                                if 'T_inf' in df_active.columns:
-                                    st.session_state.smn_t_inf = float(df_active['T_inf'].iloc[0])
+                                val_v = float(df_active['V_inf'].iloc[0])
+                                val_rho = float(df_active['rho_inf'].iloc[0])
+                                val_p = float(df_active['P_inf'].iloc[0])
+                                val_t = float(df_active['T_inf'].iloc[0]) if 'T_inf' in df_active.columns else 15.0
+                                
+                                st.session_state.smn_v_inf = val_v
+                                st.session_state.smn_rho_inf = val_rho
+                                st.session_state.smn_p_inf = val_p
+                                st.session_state.smn_t_inf = val_t
+                                
+                                # Sincronizar inputs manuales de la UI
+                                st.session_state.smn_2d_v_inf_input = val_v
+                                st.session_state.smn_2d_rho_inf_input = val_rho
+                                st.session_state.smn_2d_p_inf_input = val_p
+                                st.session_state.smn_2d_t_inf_input = val_t
                                     
                             st.session_state.smn_matriz_seleccionada = df_active
                             st.session_state.last_drv_smn_2d = sel_drv
@@ -255,16 +285,27 @@ def show_smn_2d():
             if st.button("📥 Cargar Plano de Memoria al Visualizador", use_container_width=True):
                 df_active = st.session_state.smn_archivos_memoria[sel_mem]
                 if 'V_inf' in df_active.columns:
-                    st.session_state.smn_v_inf = float(df_active['V_inf'].iloc[0])
-                    st.session_state.smn_rho_inf = float(df_active['rho_inf'].iloc[0])
-                    st.session_state.smn_p_inf = float(df_active['P_inf'].iloc[0])
-                    if 'T_inf' in df_active.columns:
-                        st.session_state.smn_t_inf = float(df_active['T_inf'].iloc[0])
+                    val_v = float(df_active['V_inf'].iloc[0])
+                    val_rho = float(df_active['rho_inf'].iloc[0])
+                    val_p = float(df_active['P_inf'].iloc[0])
+                    val_t = float(df_active['T_inf'].iloc[0]) if 'T_inf' in df_active.columns else 15.0
+                    
+                    st.session_state.smn_v_inf = val_v
+                    st.session_state.smn_rho_inf = val_rho
+                    st.session_state.smn_p_inf = val_p
+                    st.session_state.smn_t_inf = val_t
+                    
+                    # Sincronizar inputs manuales de la UI
+                    st.session_state.smn_2d_v_inf_input = val_v
+                    st.session_state.smn_2d_rho_inf_input = val_rho
+                    st.session_state.smn_2d_p_inf_input = val_p
+                    st.session_state.smn_2d_t_inf_input = val_t
+                    
                 st.session_state.smn_matriz_seleccionada = df_active
                 st.success("✅ Plano cargado correctamente.")
                 st.rerun()
                 
-    # 4. Graficación 2D
+    # 5. Graficación 2D
     if not st.session_state.smn_matriz_seleccionada.empty:
         df_m = st.session_state.smn_matriz_seleccionada.copy()
         st.markdown("### 🎨 Opciones y Gráfico 2D")

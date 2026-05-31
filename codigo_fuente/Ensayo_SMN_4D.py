@@ -106,6 +106,7 @@ def show_smn_4d():
     st.subheader("📥 Cargar y Guardar Plano en Estación X (4D)")
     st.caption("Subí un plano CSV para asociar a una estación física 'X' e integrarlo con múltiples capas espaciales y mallas 3D STL.")
     
+    # 1. Cargadores de archivos
     c_u1, c_u2 = st.columns(2)
     with c_u1:
         up_smn_4d = st.file_uploader("Subir archivo de plano SMN (.csv)", type=['csv'], key="up_smn_4d")
@@ -121,7 +122,7 @@ def show_smn_4d():
         elif up_infinito_4d:
             timestamp_detectado = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_4d")
 
-    # Vincular Valores en el Infinito desde el archivo de texto
+    # Vincular Valores en el Infinito
     if up_infinito_4d and timestamp_detectado:
         inf_vals = _calcular_valores_infinito_smn(up_infinito_4d.read(), timestamp_detectado)
         if inf_vals:
@@ -129,13 +130,20 @@ def show_smn_4d():
             st.session_state.smn_rho_inf = inf_vals['rho_inf']
             st.session_state.smn_p_inf = inf_vals['p_inf']
             st.session_state.smn_t_inf = inf_vals['t_inf']
+            
+            # Sincronizar inputs manuales de la UI
+            st.session_state.smn_4d_v_inf_input = inf_vals['v_inf']
+            st.session_state.smn_4d_rho_inf_input = inf_vals['rho_inf']
+            st.session_state.smn_4d_p_inf_input = inf_vals['p_inf']
+            st.session_state.smn_4d_t_inf_input = inf_vals['t_inf']
+            
             st.success(f"✅ Valores del infinito vinculados automáticamente: V_∞={inf_vals['v_inf']} m/s, ρ_∞={inf_vals['rho_inf']:.4f} kg/m³")
             st.rerun()
 
+    # Procesar archivo CSV
     if up_smn_4d:
         try:
             up_smn_4d.seek(0)
-            # INTENTAR LEER CON ENCODING ROBUSTO PARA SOPORTAR CARACTERES ESPECIALES/LATIN-1 (Símbolo º, acentos)
             try:
                 df_raw = pd.read_csv(up_smn_4d, sep=';', decimal=',', encoding='utf-8')
             except UnicodeDecodeError:
@@ -157,7 +165,6 @@ def show_smn_4d():
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
                 df_proc['Z'] = df_raw['Posicion Sonda Y[mm]'].astype(float)
                 
-                # Excluir Alfa/Beta/Cp_Alfa/Cp_Beta
                 var_mappings = {
                     'Presion_Est': 'Presion estatica [Pa]',
                     'Presion_Tot': 'Presion total [Pa]',
@@ -185,7 +192,19 @@ def show_smn_4d():
                 st.session_state.smn_archivos_memoria[name_mem] = df_proc
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
-            
+
+    # 2. CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO (MANUAL FALLBACK)
+    st.markdown("---")
+    st.markdown("##### 🌐 Datos del infinito en caso de no poder relacionar archivos")
+    c_inf1, c_inf2, c_inf3, c_inf4 = st.columns(4)
+    st.session_state.smn_v_inf = c_inf1.number_input("Velocidad V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_4d_v_inf_input")
+    st.session_state.smn_rho_inf = c_inf2.number_input("Densidad ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_4d_rho_inf_input")
+    st.session_state.smn_p_inf = c_inf3.number_input("Presión P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_4d_p_inf_input")
+    st.session_state.smn_t_inf = c_inf4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_4d_t_inf_input")
+
+    # 3. Guardar en Google Drive como JSON 4D con Estación X
+    st.markdown("---")
+    st.markdown("##### 💾 Guardar Plano en Google Drive")
     op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn_4d = st.selectbox("Seleccionar Plano a Guardar en Drive (4D):", op_smn, key="sel_smn_4d_save")
     smn_x_4d = st.number_input("Posición en Estación X [mm]:", value=150.0, step=10.0, key="smn_x_4d")
@@ -200,6 +219,15 @@ def show_smn_4d():
             df_to_save['Pos_X'] = smn_x_4d
             df_to_save['AOA'] = smn_aoa_4d
             
+            # RECALCULAR COEFICIENTES CP AL MOMENTO DE GUARDAR
+            q_inf = 0.5 * st.session_state.smn_rho_inf * (st.session_state.smn_v_inf ** 2)
+            if q_inf != 0:
+                df_to_save['Cp_Est'] = (df_to_save['Presion_Est'] - st.session_state.smn_p_inf) / q_inf
+                df_to_save['Cp_Tot'] = (df_to_save['Presion_Tot'] - st.session_state.smn_p_inf) / q_inf
+            else:
+                df_to_save['Cp_Est'] = 0.0
+                df_to_save['Cp_Tot'] = 0.0
+            
             # GUARDAR VALORES DEL INFINITO EN LA SUPERFICIE 4D
             df_to_save['V_inf'] = st.session_state.smn_v_inf
             df_to_save['rho_inf'] = st.session_state.smn_rho_inf
@@ -211,15 +239,6 @@ def show_smn_4d():
                 st.success(f"✅ Guardado en Drive: {nombre_final_4d}")
             else:
                 st.error("Error al guardar en Drive.")
-
-    # --- CONFIGURACIÓN DE CONDICIONES ATMOSFÉRICAS DEL INFINITO (MANUAL FALLBACK) ---
-    st.markdown("---")
-    st.markdown("##### 🌐 Datos del infinito en caso de no poder relacionar archivos")
-    c_inf1, c_inf2, c_inf3, c_inf4 = st.columns(4)
-    st.session_state.smn_v_inf = c_inf1.number_input("Velocidad V_∞ [m/s]:", value=st.session_state.smn_v_inf, format="%.2f", key="smn_4d_v_inf_input")
-    st.session_state.smn_rho_inf = c_inf2.number_input("Densidad ρ_∞ [kg/m³]:", value=st.session_state.smn_rho_inf, format="%.4f", key="smn_4d_rho_inf_input")
-    st.session_state.smn_p_inf = c_inf3.number_input("Presión P_∞ [Pa]:", value=st.session_state.smn_p_inf, format="%.1f", key="smn_4d_p_inf_input")
-    st.session_state.smn_t_inf = c_inf4.number_input("Temperatura T_∞ [°C]:", value=st.session_state.smn_t_inf, format="%.1f", key="smn_4d_t_inf_input")
                 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -248,6 +267,29 @@ def show_smn_4d():
                     if not p_info[4]:
                         p_info[4] = auth.get_surface_data_string(p_info[0])
                     loaded.append(tuple(p_info))
+                
+                # RESTAURAR VALORES DEL INFINITO DEL PRIMER PLANO CARGADO Y SINCRONIZAR UI
+                if loaded:
+                    try:
+                        df_first = pd.read_json(io.StringIO(loaded[0][4]))
+                        if 'V_inf' in df_first.columns:
+                            val_v = float(df_first['V_inf'].iloc[0])
+                            val_rho = float(df_first['rho_inf'].iloc[0])
+                            val_p = float(df_first['P_inf'].iloc[0])
+                            val_t = float(df_first['T_inf'].iloc[0]) if 'T_inf' in df_first.columns else 15.0
+                            
+                            st.session_state.smn_v_inf = val_v
+                            st.session_state.smn_rho_inf = val_rho
+                            st.session_state.smn_p_inf = val_p
+                            st.session_state.smn_t_inf = val_t
+                            
+                            st.session_state.smn_4d_v_inf_input = val_v
+                            st.session_state.smn_4d_rho_inf_input = val_rho
+                            st.session_state.smn_4d_p_inf_input = val_p
+                            st.session_state.smn_4d_t_inf_input = val_t
+                    except Exception as e:
+                        pass
+                
                 st.session_state.smn_planos_seleccionados = loaded
                 st.session_state.last_planos_smn_4d = planos_sel_labels
             st.rerun()
