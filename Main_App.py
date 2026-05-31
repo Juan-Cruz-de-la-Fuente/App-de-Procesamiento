@@ -193,6 +193,9 @@ def render_navbar():
                     if st.button("🌌 Vis. SMN 4D", use_container_width=True):
                         st.session_state.seccion_actual = 'smn_4d'
                         st.rerun()
+                    if st.button("📊 Método de Betz", use_container_width=True):
+                        st.session_state.seccion_actual = 'smn_betz'
+                        st.rerun()
 
             with c_df:
                 if st.button("🎨 DATA FUSION", use_container_width=True, 
@@ -272,3 +275,6 @@ else:
     elif st.session_state.seccion_actual == 'smn_4d':
         from codigo_fuente.Ensayo_SMN_4D import show_smn_4d
         show_smn_4d()
+    elif st.session_state.seccion_actual == 'smn_betz':
+        from codigo_fuente.Ensayo_SMN_Betz import show_smn_betz
+        show_smn_betz()
