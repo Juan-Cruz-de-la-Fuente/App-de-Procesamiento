@@ -856,7 +856,7 @@ elif page == "📂 1. Carga de Modelo y Fotos":
         fig = go.Figure(data=[go.Mesh3d(
             x=v[:,0], y=v[:,1], z=v[:,2],
             i=f_arr[:,0], j=f_arr[:,1], k=f_arr[:,2],
-            color='#3b82f6', opacity=0.9, flatshading=True,
+            color='#3b82f6', opacity=0.9, flatshading=False,
             lighting=dict(ambient=0.4, diffuse=0.8, specular=0.2, roughness=0.5)
         )])
         fig.update_layout(
@@ -1342,7 +1342,7 @@ elif page == "🔭 3. Calibración de Cámaras":
                 traces = [go.Mesh3d(
                     x=v[:,0], y=v[:,1], z=v[:,2],
                     i=f_arr[:,0], j=f_arr[:,1], k=f_arr[:,2],
-                    color='#64748b', opacity=0.55, flatshading=True,
+                    color='#64748b', opacity=0.55, flatshading=False,
                     lighting=dict(ambient=0.4, diffuse=0.8, specular=0.1)
                 )]
                 for name, cal in st.session_state.calibrations.items():
@@ -1414,7 +1414,7 @@ elif page == "🎨 4. Texturizado Final":
                 x=v[:,0], y=v[:,1], z=v[:,2],
                 i=f_arr[:,0], j=f_arr[:,1], k=f_arr[:,2],
                 facecolor=st.session_state.face_colors,
-                opacity=1.0, flatshading=True,
+                opacity=1.0, flatshading=False,
                 lighting=dict(ambient=0.55, diffuse=0.6, specular=0.1, roughness=0.8)
             )])
             fig.update_layout(

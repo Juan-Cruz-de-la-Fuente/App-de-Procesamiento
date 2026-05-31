@@ -991,7 +991,7 @@ def show_data_fusion():
                 y=v[:,1] + st.session_state.df_offset_y,
                 z=v[:,2] + st.session_state.df_offset_z,
                 i=f_arr[:,0], j=f_arr[:,1], k=f_arr[:,2],
-                color='#475569', opacity=0.5, flatshading=True
+                color='#475569', opacity=0.5, flatshading=False
             )]
             
             for name, cal in st.session_state.df_calibrations.items():
@@ -1056,7 +1056,7 @@ def show_data_fusion():
                 z=v[:,2] + st.session_state.df_offset_z,
                 i=f_arr[:,0], j=f_arr[:,1], k=f_arr[:,2],
                 facecolor=st.session_state.df_face_colors,
-                opacity=1.0, flatshading=True,
+                opacity=1.0, flatshading=False,
                 lighting=dict(ambient=0.6, diffuse=0.6, specular=0.1, roughness=0.8)
             )])
             

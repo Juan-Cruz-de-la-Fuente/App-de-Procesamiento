@@ -300,7 +300,7 @@ def show_animacion():
                             i=tri_v.simplices[:,0], j=tri_v.simplices[:,1], k=tri_v.simplices[:,2],
                             intensity=P_ok,
                             colorscale='Jet', cmin=pmin_v, cmax=pmax_v,
-                            showscale=True, opacity=1.0, flatshading=True,
+                            showscale=True, opacity=1.0, flatshading=False,
                             name=f"Presión (α={alpha_slider:.1f}°)",
                             colorbar=dict(title=dict(text=g.get('var','Presión'), side='right'))
                         ))
