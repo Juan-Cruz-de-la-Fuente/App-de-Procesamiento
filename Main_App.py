@@ -147,7 +147,7 @@ def login_page():
 def render_navbar():
     if st.session_state.get('logged_in'):
         with st.container():
-            c_sl, c1, c2, c3, c_df, c4, c5, c_sr = st.columns([0.8, 1.6, 1.8, 1.6, 1.8, 1.6, 1.8, 0.8])
+            c_sl, c1, c2, c3, c_df, c_smn, c4, c5, c_sr = st.columns([0.6, 1.4, 1.6, 1.4, 1.6, 1.6, 1.4, 1.4, 0.6])
             
             with c1:
                 if st.button("🚀 INICIO", use_container_width=True, 
@@ -193,6 +193,18 @@ def render_navbar():
                              type="primary" if st.session_state.seccion_actual == 'data_fusion' else "secondary"):
                     st.session_state.seccion_actual = 'data_fusion'
                     st.rerun()
+
+            with c_smn:
+                with st.popover("🧪 ENSAYO SMN", use_container_width=True):
+                    if st.button("📈 Vis. SMN 2D", use_container_width=True):
+                        st.session_state.seccion_actual = 'smn_2d'
+                        st.rerun()
+                    if st.button("🌪️ Vis. SMN 3D", use_container_width=True):
+                        st.session_state.seccion_actual = 'smn_3d'
+                        st.rerun()
+                    if st.button("🌌 Vis. SMN 4D", use_container_width=True):
+                        st.session_state.seccion_actual = 'smn_4d'
+                        st.rerun()
 
             with c4:
                 if st.button("⚙️ CONFIG", use_container_width=True, 
@@ -251,3 +263,12 @@ else:
     elif st.session_state.seccion_actual == 'configuracion':
         from codigo_fuente.Configuracion import show_configuracion
         show_configuracion()
+    elif st.session_state.seccion_actual == 'smn_2d':
+        from codigo_fuente.Ensayo_SMN_2D import show_smn_2d
+        show_smn_2d()
+    elif st.session_state.seccion_actual == 'smn_3d':
+        from codigo_fuente.Ensayo_SMN_3D import show_smn_3d
+        show_smn_3d()
+    elif st.session_state.seccion_actual == 'smn_4d':
+        from codigo_fuente.Ensayo_SMN_4D import show_smn_4d
+        show_smn_4d()

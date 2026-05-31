@@ -212,6 +212,48 @@ def snap_to_closest_vertex(P, vertices):
     return vertices[closest_idx]
 
 
+def update_point_cartesian(image_name, idx, coord, snap_active, vertices):
+    val_key = f"{coord.lower()}_{image_name}_{idx}"
+    if val_key in st.session_state:
+        pt = st.session_state.points_data[image_name][idx]
+        pt[coord] = float(st.session_state[val_key])
+        
+        if snap_active and vertices is not None:
+            P_snap = snap_to_closest_vertex(np.array([pt["X"], pt["Y"], pt["Z"]]), vertices)
+            pt["X"] = float(P_snap[0])
+            pt["Y"] = float(P_snap[1])
+            pt["Z"] = float(P_snap[2])
+
+def update_point_cylindrical(image_name, idx, coord, snap_active, vertices):
+    pt = st.session_state.points_data[image_name][idx]
+    if coord == 'Z':
+        val_key = f"cz_{image_name}_{idx}"
+        if val_key in st.session_state:
+            pt["Z"] = float(st.session_state[val_key])
+    else:
+        r_key = f"cr_{image_name}_{idx}"
+        phi_key = f"cphi_{image_name}_{idx}"
+        
+        if coord == 'R' and r_key in st.session_state:
+            r_val = float(st.session_state[r_key])
+            phi_deg = float(np.degrees(np.arctan2(pt["Y"], pt["X"]))) if (pt["X"] != 0 or pt["Y"] != 0) else 0.0
+        elif coord == 'phi' and phi_key in st.session_state:
+            phi_deg = float(st.session_state[phi_key])
+            r_val = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
+        else:
+            return
+            
+        phi_rad = np.radians(phi_deg)
+        pt["X"] = float(r_val * np.cos(phi_rad))
+        pt["Y"] = float(r_val * np.sin(phi_rad))
+        
+    if snap_active and vertices is not None:
+        P_snap = snap_to_closest_vertex(np.array([pt["X"], pt["Y"], pt["Z"]]), vertices)
+        pt["X"] = float(P_snap[0])
+        pt["Y"] = float(P_snap[1])
+        pt["Z"] = float(P_snap[2])
+
+
 def get_camera_wireframe(C, rvec, tvec, scale=1.0):
     """
     Calcula los puntos X, Y, Z del alambre de una pirámide en coordenadas del mundo,
@@ -1132,92 +1174,86 @@ elif page == "🎯 2. Marcador 2D-3D":
             if coord_mode == "Cartesiano (X, Y, Z)":
                 col_labels = [f"X [{units}]", f"Y [{units}]", f"Z [{units}]"]
                 
-                with st.form(key=f"form_cart_{image_name}"):
-                    st.write("Editá las coordenadas y luego presioná **Guardar Coordenadas**:")
-                    hcols = st.columns([1, 1, 1, 2, 2, 2])
-                    hcols[0].markdown("**Pto**")
-                    hcols[1].markdown("**Pix U**")
-                    hcols[2].markdown("**Pix V**")
-                    hcols[3].markdown(f"**{col_labels[0]}**")
-                    hcols[4].markdown(f"**{col_labels[1]}**")
-                    hcols[5].markdown(f"**{col_labels[2]}**")
+                st.write("Editá las coordenadas (se guardan y auto-relacionan automáticamente al instante):")
+                hcols = st.columns([1, 1, 1, 2, 2, 2])
+                hcols[0].markdown("**Pto**")
+                hcols[1].markdown("**Pix U**")
+                hcols[2].markdown("**Pix V**")
+                hcols[3].markdown(f"**{col_labels[0]}**")
+                hcols[4].markdown(f"**{col_labels[1]}**")
+                hcols[5].markdown(f"**{col_labels[2]}**")
+                
+                for i, pt in enumerate(points):
+                    cols = st.columns([1, 1, 1, 2, 2, 2])
+                    cols[0].write(f"{i + 1}")
+                    cols[1].write(f"{int(pt['u'])}")
+                    cols[2].write(f"{int(pt['v'])}")
                     
-                    new_coords = []
-                    for i, pt in enumerate(points):
-                        cols = st.columns([1, 1, 1, 2, 2, 2])
-                        cols[0].write(f"{i + 1}")
-                        cols[1].write(f"{int(pt['u'])}")
-                        cols[2].write(f"{int(pt['v'])}")
-                        
-                        raw_x = cols[3].number_input("X", value=float(pt["X"]), step=0.001, format="%.4f", key=f"x_{image_name}_{i}", label_visibility="collapsed")
-                        raw_y = cols[4].number_input("Y", value=float(pt["Y"]), step=0.001, format="%.4f", key=f"y_{image_name}_{i}", label_visibility="collapsed")
-                        raw_z = cols[5].number_input("Z", value=float(pt["Z"]), step=0.001, format="%.4f", key=f"z_{image_name}_{i}", label_visibility="collapsed")
-                        new_coords.append((raw_x, raw_y, raw_z))
-                        
-                    submitted = st.form_submit_button("💾 Guardar Coordenadas", use_container_width=True)
-                    if submitted:
-                        for idx in range(len(points)):
-                            rx, ry, rz = new_coords[idx]
-                            if snap_active and st.session_state.vertices is not None:
-                                P_snap = snap_to_closest_vertex(np.array([rx, ry, rz]), st.session_state.vertices)
-                                points[idx]["X"] = float(P_snap[0])
-                                points[idx]["Y"] = float(P_snap[1])
-                                points[idx]["Z"] = float(P_snap[2])
-                            else:
-                                points[idx]["X"] = rx
-                                points[idx]["Y"] = ry
-                                points[idx]["Z"] = rz
-                        st.rerun()
-
+                    cols[3].number_input(
+                        "X", value=float(pt["X"]), step=0.001, format="%.4f", 
+                        key=f"x_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cartesian, args=(image_name, i, 'X', snap_active, st.session_state.vertices)
+                    )
+                    cols[4].number_input(
+                        "Y", value=float(pt["Y"]), step=0.001, format="%.4f", 
+                        key=f"y_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cartesian, args=(image_name, i, 'Y', snap_active, st.session_state.vertices)
+                    )
+                    cols[5].number_input(
+                        "Z", value=float(pt["Z"]), step=0.001, format="%.4f", 
+                        key=f"z_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cartesian, args=(image_name, i, 'Z', snap_active, st.session_state.vertices)
+                    )
+                    
             else:
                 # ── MODO CILÍNDRICO ───────────────────────────────
                 cyl_col_labels = [f"Z [{units}]", f"R [{units}]", "φ [°]"]
 
-                with st.form(key=f"form_cyl_{image_name}"):
-                    st.write("Editá las coordenadas y luego presioná **Guardar Coordenadas**:")
-                    hcols = st.columns([1, 1, 1, 2, 2, 2])
-                    hcols[0].markdown("**Pto**")
-                    hcols[1].markdown("**Pix U**")
-                    hcols[2].markdown("**Pix V**")
-                    hcols[3].markdown(f"**{cyl_col_labels[0]}**")
-                    hcols[4].markdown(f"**{cyl_col_labels[1]}**")
-                    hcols[5].markdown(f"**{cyl_col_labels[2]}**")
+                st.write("Editá las coordenadas (se guardan y auto-relacionan automáticamente al instante):")
+                hcols = st.columns([1, 1, 1, 2, 2, 2])
+                hcols[0].markdown("**Pto**")
+                hcols[1].markdown("**Pix U**")
+                hcols[2].markdown("**Pix V**")
+                hcols[3].markdown(f"**{cyl_col_labels[0]}**")
+                hcols[4].markdown(f"**{cyl_col_labels[1]}**")
+                hcols[5].markdown(f"**{cyl_col_labels[2]}**")
+                
+                for i, pt in enumerate(points):
+                    cols = st.columns([1, 1, 1, 2, 2, 2])
+                    cols[0].write(f"{i + 1}")
+                    cols[1].write(f"{int(pt['u'])}")
+                    cols[2].write(f"{int(pt['v'])}")
                     
-                    new_coords = []
-                    for i, pt in enumerate(points):
-                        cols = st.columns([1, 1, 1, 2, 2, 2])
-                        cols[0].write(f"{i + 1}")
-                        cols[1].write(f"{int(pt['u'])}")
-                        cols[2].write(f"{int(pt['v'])}")
-                        
-                        r_z = cols[3].number_input("Z", value=float(pt["Z"]), step=0.001, format="%.4f", key=f"cz_{image_name}_{i}", label_visibility="collapsed")
-                        
-                        r_r = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
-                        r_r_val = cols[4].number_input("R", value=r_r, step=0.001, format="%.4f", min_value=0.0, key=f"cr_{image_name}_{i}", label_visibility="collapsed")
-                        
-                        r_phi = float(np.degrees(np.arctan2(pt["Y"], pt["X"])))
-                        r_phi_val = cols[5].number_input("phi", value=r_phi, step=1.0, format="%.2f", key=f"cphi_{image_name}_{i}", label_visibility="collapsed")
-                        
-                        new_coords.append((r_z, r_r_val, r_phi_val))
-                        
-                    submitted = st.form_submit_button("💾 Guardar Coordenadas", use_container_width=True)
-                    if submitted:
-                        for idx in range(len(points)):
-                            Z_cyl, R_cyl, phi_deg = new_coords[idx]
-                            phi_rad = np.radians(phi_deg)
-                            raw_x = R_cyl * np.cos(phi_rad)
-                            raw_y = R_cyl * np.sin(phi_rad)
-                            raw_z = Z_cyl
-                            if snap_active and st.session_state.vertices is not None:
-                                P_snap = snap_to_closest_vertex(np.array([raw_x, raw_y, raw_z]), st.session_state.vertices)
-                                points[idx]["X"] = float(P_snap[0])
-                                points[idx]["Y"] = float(P_snap[1])
-                                points[idx]["Z"] = float(P_snap[2])
-                            else:
-                                points[idx]["X"] = raw_x
-                                points[idx]["Y"] = raw_y
-                                points[idx]["Z"] = raw_z
-                        st.rerun()
+                    cols[3].number_input(
+                        "Z", value=float(pt["Z"]), step=0.001, format="%.4f", 
+                        key=f"cz_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cylindrical, args=(image_name, i, 'Z', snap_active, st.session_state.vertices)
+                    )
+                    
+                    r_r = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
+                    cols[4].number_input(
+                        "R", value=r_r, step=0.001, format="%.4f", min_value=0.0, 
+                        key=f"cr_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cylindrical, args=(image_name, i, 'R', snap_active, st.session_state.vertices)
+                    )
+                    
+                    r_phi = float(np.degrees(np.arctan2(pt["Y"], pt["X"]))) if (pt["X"] != 0 or pt["Y"] != 0) else 0.0
+                    cols[5].number_input(
+                        "phi", value=r_phi, step=1.0, format="%.2f", 
+                        key=f"cphi_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_point_cylindrical, args=(image_name, i, 'phi', snap_active, st.session_state.vertices)
+                    )
+            
+            # Botón de Snapping manual para conveniencia
+            if snap_active and st.session_state.vertices is not None:
+                if st.button("🧲 Ajustar todos los puntos al STL ahora", use_container_width=True):
+                    for idx in range(len(points)):
+                        P_snap = snap_to_closest_vertex(np.array([points[idx]["X"], points[idx]["Y"], points[idx]["Z"]]), st.session_state.vertices)
+                        points[idx]["X"] = float(P_snap[0])
+                        points[idx]["Y"] = float(P_snap[1])
+                        points[idx]["Z"] = float(P_snap[2])
+                    st.success("¡Coordenadas ajustadas al vértice STL más cercano!")
+                    st.rerun()
 
                 # Preview de la conversión
                 with st.expander("👁️ Ver coordenadas cartesianas resultantes (X, Y, Z)"):

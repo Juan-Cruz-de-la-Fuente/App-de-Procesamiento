@@ -272,7 +272,7 @@ def render_navbar():
     if st.session_state.get('logged_in'):
         with st.container():
             # Layout principal
-            c_sl, c1, c2, c3, c4, c5, c6, c_sr = st.columns([0.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 0.5])
+            c_sl, c1, c2, c3, c4, c_smn, c5, c6, c_sr = st.columns([0.5, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 0.5])
             
             with c1:
                 t1 = "primary" if st.session_state.seccion_actual == 'inicio' else "secondary"
@@ -390,6 +390,18 @@ def render_navbar():
                 if st.button("📦 MODELOS", use_container_width=True, type=t4):
                      st.session_state.seccion_actual = 'modelos'
                      st.rerun()
+
+            with c_smn:
+                with st.popover("🧪 ENSAYO SMN", use_container_width=True):
+                    if st.button("📈 Vis. SMN 2D", use_container_width=True, key="legacy_btn_smn_2d"):
+                        st.session_state.seccion_actual = 'smn_2d'
+                        st.rerun()
+                    if st.button("🌪️ Vis. SMN 3D", use_container_width=True, key="legacy_btn_smn_3d"):
+                        st.session_state.seccion_actual = 'smn_3d'
+                        st.rerun()
+                    if st.button("🌌 Vis. SMN 4D", use_container_width=True, key="legacy_btn_smn_4d"):
+                        st.session_state.seccion_actual = 'smn_4d'
+                        st.rerun()
 
             with c5:
                 t5 = "primary" if st.session_state.seccion_actual == 'configuracion' else "secondary"
@@ -6630,6 +6642,16 @@ elif st.session_state.seccion_actual == 'configuracion':
         st.info("💡 Los usuarios creados podrán acceder inmediatamente con sus credenciales.")
     else:
         st.warning("⚠️ Solo el administrador puede gestionar usuarios. Contacte al admin para solicitar acceso.")
+
+elif st.session_state.seccion_actual == 'smn_2d':
+    from codigo_fuente.Ensayo_SMN_2D import show_smn_2d
+    show_smn_2d()
+elif st.session_state.seccion_actual == 'smn_3d':
+    from codigo_fuente.Ensayo_SMN_3D import show_smn_3d
+    show_smn_3d()
+elif st.session_state.seccion_actual == 'smn_4d':
+    from codigo_fuente.Ensayo_SMN_4D import show_smn_4d
+    show_smn_4d()
 
 
 # Footer

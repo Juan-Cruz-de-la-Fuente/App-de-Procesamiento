@@ -317,6 +317,48 @@ def get_datafusion_projects(username):
     return results.get('files', [])
 
 
+def update_df_point_cartesian(image_name, idx, coord, snap_active, vertices):
+    val_key = f"df_{coord.lower()}_{image_name}_{idx}"
+    if val_key in st.session_state:
+        pt = st.session_state.df_points_data[image_name][idx]
+        pt[coord] = float(st.session_state[val_key])
+        
+        if snap_active and vertices is not None:
+            P_snap = snap_to_closest_vertex(np.array([pt["X"], pt["Y"], pt["Z"]]), vertices)
+            pt["X"] = float(P_snap[0])
+            pt["Y"] = float(P_snap[1])
+            pt["Z"] = float(P_snap[2])
+
+def update_df_point_cylindrical(image_name, idx, coord, snap_active, vertices):
+    pt = st.session_state.df_points_data[image_name][idx]
+    if coord == 'Z':
+        val_key = f"df_cz_{image_name}_{idx}"
+        if val_key in st.session_state:
+            pt["Z"] = float(st.session_state[val_key])
+    else:
+        r_key = f"df_cr_{image_name}_{idx}"
+        phi_key = f"df_cphi_{image_name}_{idx}"
+        
+        if coord == 'R' and r_key in st.session_state:
+            r_val = float(st.session_state[r_key])
+            phi_deg = float(np.degrees(np.arctan2(pt["Y"], pt["X"]))) if (pt["X"] != 0 or pt["Y"] != 0) else 0.0
+        elif coord == 'phi' and phi_key in st.session_state:
+            phi_deg = float(st.session_state[phi_key])
+            r_val = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
+        else:
+            return
+            
+        phi_rad = np.radians(phi_deg)
+        pt["X"] = float(r_val * np.cos(phi_rad))
+        pt["Y"] = float(r_val * np.sin(phi_rad))
+        
+    if snap_active and vertices is not None:
+        P_snap = snap_to_closest_vertex(np.array([pt["X"], pt["Y"], pt["Z"]]), vertices)
+        pt["X"] = float(P_snap[0])
+        pt["Y"] = float(P_snap[1])
+        pt["Z"] = float(P_snap[2])
+
+
 # ═══════════════════════════════════════════════════════════════
 #  COMPONENTE PRINCIPAL: SHOW_DATAFUSION
 # ═══════════════════════════════════════════════════════════════
@@ -839,47 +881,72 @@ def show_data_fusion():
             
             coord_mode = st.radio("Sistema de coordenadas de entrada:", ["Cartesiano (X, Y, Z)", "Cilíndrico (Z, R, φ)"], horizontal=True)
             
-            with st.form(key=f"df_points_form_{image_name}"):
-                st.markdown("Ingrese los valores físicos de coordenadas:")
-                new_coords = []
-                for i, pt in enumerate(points):
-                    cols = st.columns([1, 1, 1, 2, 2, 2])
-                    cols[0].write(f"P{i+1}")
-                    cols[1].write(f"u: {int(pt['u'])}")
-                    cols[2].write(f"v: {int(pt['v'])}")
-                    
-                    if coord_mode == "Cartesiano (X, Y, Z)":
-                        rx = cols[3].number_input("X", value=float(pt["X"]), step=1.0, key=f"df_x_{image_name}_{i}", label_visibility="collapsed")
-                        ry = cols[4].number_input("Y", value=float(pt["Y"]), step=1.0, key=f"df_y_{image_name}_{i}", label_visibility="collapsed")
-                        rz = cols[5].number_input("Z", value=float(pt["Z"]), step=1.0, key=f"df_z_{image_name}_{i}", label_visibility="collapsed")
-                        new_coords.append((rx, ry, rz))
-                    else:
-                        rz = cols[3].number_input("Z (Alt)", value=float(pt["Z"]), step=1.0, key=f"df_cz_{image_name}_{i}", label_visibility="collapsed")
-                        curr_r = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
-                        rr = cols[4].number_input("R (Rad)", value=curr_r, step=1.0, min_value=0.0, key=f"df_cr_{image_name}_{i}", label_visibility="collapsed")
-                        curr_phi = float(np.degrees(np.arctan2(pt["Y"], pt["X"])))
-                        rphi = cols[5].number_input("φ (Grd)", value=curr_phi, step=5.0, key=f"df_cphi_{image_name}_{i}", label_visibility="collapsed")
-                        
-                        # Convertir a cartesiano
-                        phi_rad = np.radians(rphi)
-                        rx = rr * np.cos(phi_rad)
-                        ry = rr * np.sin(phi_rad)
-                        new_coords.append((rx, ry, rz))
-                        
-                submitted = st.form_submit_button("💾 APLICAR Y AJUSTAR COORDENADAS", use_container_width=True)
-                if submitted:
+            st.markdown("Ingrese los valores físicos de coordenadas (se guardan y auto-relacionan automáticamente al instante):")
+            
+            # Encabezado de la tabla de coordenadas
+            hcols = st.columns([1, 1, 1, 2, 2, 2])
+            hcols[0].markdown("**Pto**")
+            hcols[1].markdown("**Pix U**")
+            hcols[2].markdown("**Pix V**")
+            if coord_mode == "Cartesiano (X, Y, Z)":
+                hcols[3].markdown(f"**X [{units}]**")
+                hcols[4].markdown(f"**Y [{units}]**")
+                hcols[5].markdown(f"**Z [{units}]**")
+            else:
+                hcols[3].markdown(f"**Z [{units}]**")
+                hcols[4].markdown(f"**R [{units}]**")
+                hcols[5].markdown("**φ [°]**")
+
+            for i, pt in enumerate(points):
+                cols = st.columns([1, 1, 1, 2, 2, 2])
+                cols[0].write(f"P{i+1}")
+                cols[1].write(f"{int(pt['u'])}")
+                cols[2].write(f"{int(pt['v'])}")
+                
+                if coord_mode == "Cartesiano (X, Y, Z)":
+                    cols[3].number_input(
+                        "X", value=float(pt["X"]), step=1.0, 
+                        key=f"df_x_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cartesian, args=(image_name, i, 'X', snap_active, v)
+                    )
+                    cols[4].number_input(
+                        "Y", value=float(pt["Y"]), step=1.0, 
+                        key=f"df_y_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cartesian, args=(image_name, i, 'Y', snap_active, v)
+                    )
+                    cols[5].number_input(
+                        "Z", value=float(pt["Z"]), step=1.0, 
+                        key=f"df_z_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cartesian, args=(image_name, i, 'Z', snap_active, v)
+                    )
+                else:
+                    cols[3].number_input(
+                        "Z (Alt)", value=float(pt["Z"]), step=1.0, 
+                        key=f"df_cz_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cylindrical, args=(image_name, i, 'Z', snap_active, v)
+                    )
+                    curr_r = float(np.sqrt(pt["X"]**2 + pt["Y"]**2))
+                    cols[4].number_input(
+                        "R (Rad)", value=curr_r, step=1.0, min_value=0.0, 
+                        key=f"df_cr_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cylindrical, args=(image_name, i, 'R', snap_active, v)
+                    )
+                    curr_phi = float(np.degrees(np.arctan2(pt["Y"], pt["X"]))) if (pt["X"] != 0 or pt["Y"] != 0) else 0.0
+                    cols[5].number_input(
+                        "phi", value=curr_phi, step=5.0, 
+                        key=f"df_cphi_{image_name}_{i}", label_visibility="collapsed",
+                        on_change=update_df_point_cylindrical, args=(image_name, i, 'phi', snap_active, v)
+                    )
+            
+            # Botón de Snapping manual para conveniencia
+            if snap_active and v is not None:
+                if st.button("🧲 AJUSTAR TODOS LOS PUNTOS AL STL AHORA", use_container_width=True):
                     for idx in range(len(points)):
-                        rx, ry, rz = new_coords[idx]
-                        if snap_active and v is not None:
-                            P_snap = snap_to_closest_vertex(np.array([rx, ry, rz]), v)
-                            points[idx]["X"] = float(P_snap[0])
-                            points[idx]["Y"] = float(P_snap[1])
-                            points[idx]["Z"] = float(P_snap[2])
-                        else:
-                            points[idx]["X"] = rx
-                            points[idx]["Y"] = ry
-                            points[idx]["Z"] = rz
-                    st.success("Coordenadas actualizadas.")
+                        P_snap = snap_to_closest_vertex(np.array([points[idx]["X"], points[idx]["Y"], points[idx]["Z"]]), v)
+                        points[idx]["X"] = float(P_snap[0])
+                        points[idx]["Y"] = float(P_snap[1])
+                        points[idx]["Z"] = float(P_snap[2])
+                    st.success("¡Coordenadas ajustadas al vértice STL más cercano!")
                     st.rerun()
                     
             if len(points) >= 4:
