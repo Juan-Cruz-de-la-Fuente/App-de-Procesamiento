@@ -9,6 +9,60 @@ from scipy.spatial import Delaunay
 from codigo_fuente import Auth_Manager as auth
 from codigo_fuente.Calculations_Core import rotate_points
 
+def _calcular_valores_infinito_smn(txt_bytes, timestamp_str):
+    try:
+        df_inf = pd.read_csv(io.BytesIO(txt_bytes), sep=';', skip_blank_lines=True)
+        df_inf.columns = [str(c).strip() for c in df_inf.columns]
+        
+        if len(df_inf.columns) > 2:
+            first_col = df_inf.columns[0]
+            df_inf["ts_clean"] = df_inf[first_col].astype(str).str.split(',').str[0].str.strip()
+            df_inf["dt_val"] = pd.to_datetime(df_inf["ts_clean"], format='%d%m%y%H%M%S', errors='coerce')
+            
+            mask_failed = df_inf["dt_val"].isna()
+            if mask_failed.any():
+                df_inf.loc[mask_failed, "dt_val"] = pd.to_datetime(
+                    df_inf.loc[mask_failed, "ts_clean"], format='%y%m%d%H%M%S', errors='coerce'
+                )
+            df_inf = df_inf.dropna(subset=["dt_val"])
+            
+            if df_inf.empty:
+                return None
+                
+            ts_clean = str(timestamp_str).split(',')[0].strip()
+            target_dt = pd.to_datetime(ts_clean, format='%d%m%y%H%M%S', errors='coerce')
+            if pd.isna(target_dt):
+                target_dt = pd.to_datetime(ts_clean, format='%y%m%d%H%M%S', errors='coerce')
+            
+            if pd.isna(target_dt):
+                return None
+                
+            diffs = (df_inf["dt_val"] - target_dt).abs()
+            idx = diffs.idxmin()
+            row = df_inf.loc[idx]
+            
+            T = float(str(row.get("temp_baro", "15")).replace(",", "."))
+            P_hpa = float(str(row.get("pres_baro", "1013.25")).replace(",", "."))
+            HR = float(str(row.get("hrel", "50")).replace(",", "."))
+            
+            P_pa = P_hpa * 100.0
+            T_kelvin = T + 273.15
+            P_v_sat = 6.1078 * (10 ** ((7.5 * T)/(237.3 + T)))
+            P_v = HR / 100.0 * P_v_sat
+            P_d = P_hpa - P_v
+            rho = (P_d * 100) / (287.058 * T_kelvin) + (P_v * 100) / (461.495 * T_kelvin)
+            v_inf = float(str(row.get("velocidad", "0.0")).replace(",", "."))
+            
+            return {
+                'rho_inf': float(rho),
+                'v_inf': float(v_inf),
+                'p_inf': float(P_pa),
+                't_inf': float(T)
+            }
+    except Exception as e:
+        st.warning(f"Error al vincular valores en el infinito: {e}")
+    return None
+
 def _aplicar_pose_modelo_smn(obj_base, alpha_deg, beta_deg, dx, dy, dz, cg):
     x = np.array(obj_base['x'], dtype=float) - cg['x']
     y = np.array(obj_base['y'], dtype=float) - cg['y']
@@ -61,10 +115,38 @@ def show_smn_4d():
     st.subheader("📥 Cargar y Guardar Plano en Estación X (4D)")
     st.caption("Subí un plano CSV para asociar a una estación física 'X' e integrarlo con múltiples capas espaciales y mallas 3D STL.")
     
-    up_smn_4d = st.file_uploader("Subir archivo de plano SMN (.csv)", type=['csv'], key="up_smn_4d")
-    
+    c_u1, c_u2 = st.columns(2)
+    with c_u1:
+        up_smn_4d = st.file_uploader("Subir archivo de plano SMN (.csv)", type=['csv'], key="up_smn_4d")
+    with c_u2:
+        up_infinito_4d = st.file_uploader("Subir archivo Valores en el infinito (.txt)", type=['txt'], key="up_infinito_4d")
+
+    timestamp_detectado = None
+    if up_smn_4d:
+        ts_m = re.search(r'(\d{10,14})', up_smn_4d.name)
+        if ts_m:
+            timestamp_detectado = ts_m.group(1)
+            st.info(f"📅 Timestamp detectado en el archivo: `{timestamp_detectado}`")
+        else:
+            st.warning("⚠️ No se detectó un timestamp de 12 dígitos en el nombre del archivo.")
+            ts_input = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_4d")
+            if ts_input:
+                timestamp_detectado = ts_input
+
+    # Vincular Valores en el Infinito desde el archivo de texto
+    if up_infinito_4d and timestamp_detectado:
+        inf_vals = _calcular_valores_infinito_smn(up_infinito_4d.read(), timestamp_detectado)
+        if inf_vals:
+            st.session_state.smn_v_inf = inf_vals['v_inf']
+            st.session_state.smn_rho_inf = inf_vals['rho_inf']
+            st.session_state.smn_p_inf = inf_vals['p_inf']
+            st.session_state.smn_t_inf = inf_vals['t_inf']
+            st.success(f"✅ Valores del infinito vinculados automáticamente: V_∞={inf_vals['v_inf']} m/s, ρ_∞={inf_vals['rho_inf']:.4f} kg/m³")
+            st.rerun()
+
     if up_smn_4d:
         try:
+            up_smn_4d.seek(0)
             df_raw = pd.read_csv(up_smn_4d, sep=';', decimal=',')
             if 'Posicion Sonda X[mm]' not in df_raw.columns:
                 df_raw = pd.read_csv(up_smn_4d, sep=',', decimal='.')
@@ -78,15 +160,14 @@ def show_smn_4d():
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
                 df_proc['Z'] = df_raw['Posicion Sonda Y[mm]'].astype(float)
                 
+                # Excluir Alfa/Beta/Cp_Alfa/Cp_Beta
                 var_mappings = {
                     'Presion_Est': 'Presion estatica [Pa]',
                     'Presion_Tot': 'Presion total [Pa]',
                     'Vel_Tot': 'Velocidad [m/seg]',
                     'Vx': 'Velocidad X [m/seg]',
                     'Vy': 'Velocidad Y [m/seg]',
-                    'Vz': 'Velocidad Z [m/seg]',
-                    'Alfa': 'Alfa []',
-                    'Beta': 'Beta []'
+                    'Vz': 'Velocidad Z [m/seg]'
                 }
                 for k, col in var_mappings.items():
                     found_col = next((c for c in df_raw.columns if c.replace(' ', '').lower() == col.replace(' ', '').lower() or k.lower() in c.lower()), None)
@@ -108,7 +189,6 @@ def show_smn_4d():
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
             
-    op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn_4d = st.selectbox("Seleccionar Plano a Guardar en Drive (4D):", op_smn, key="sel_smn_4d_save")
     smn_x_4d = st.number_input("Posición en Estación X [mm]:", value=150.0, step=10.0, key="smn_x_4d")
     smn_aoa_4d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_4d")
@@ -121,6 +201,13 @@ def show_smn_4d():
             df_to_save = st.session_state.smn_archivos_memoria[sel_smn_4d].copy()
             df_to_save['Pos_X'] = smn_x_4d
             df_to_save['AOA'] = smn_aoa_4d
+            
+            # GUARDAR VALORES DEL INFINITO EN LA SUPERFICIE 4D
+            df_to_save['V_inf'] = st.session_state.smn_v_inf
+            df_to_save['rho_inf'] = st.session_state.smn_rho_inf
+            df_to_save['P_inf'] = st.session_state.smn_p_inf
+            df_to_save['T_inf'] = st.session_state.smn_t_inf
+            
             json_data = df_to_save.to_json(orient='records')
             if auth.save_surface_data_4d(st.session_state.username, nombre_final_4d, smn_x_4d, json_data):
                 st.success(f"✅ Guardado en Drive: {nombre_final_4d}")
@@ -170,9 +257,7 @@ def show_smn_4d():
         'Velocidad inducida Vy [m/s]': 'Vy',
         'Velocidad inducida Vz [m/s]': 'Vz',
         'Coeficiente de Presión Cp Est.': 'Cp_Est',
-        'Coeficiente de Presión Cp Tot.': 'Cp_Tot',
-        'Ángulo Alfa [°]': 'Alfa',
-        'Ángulo Beta [°]': 'Beta'
+        'Coeficiente de Presión Cp Tot.': 'Cp_Tot'
     }
     
     var_sel_4d = c_opt5.selectbox("Variable a graficar (4D):", list(variables_smn_4d.keys()), key="var_sel_smn_4d")
@@ -194,6 +279,15 @@ def show_smn_4d():
         
         for p_info in st.session_state.smn_planos_seleccionados:
             df_p = pd.read_json(io.StringIO(p_info[4]))
+            
+            # RESTAURAR VALORES DE REFERENCIA SI EXISTEN
+            if 'V_inf' in df_p.columns:
+                st.session_state.smn_v_inf = float(df_p['V_inf'].iloc[0])
+                st.session_state.smn_rho_inf = float(df_p['rho_inf'].iloc[0])
+                st.session_state.smn_p_inf = float(df_p['P_inf'].iloc[0])
+                if 'T_inf' in df_p.columns:
+                    st.session_state.smn_t_inf = float(df_p['T_inf'].iloc[0])
+            
             df_clean = df_p.dropna(subset=['Y', 'Z', col_var_4d]).drop_duplicates(subset=['Y', 'Z'])
             if len(df_clean) < 3: continue
             

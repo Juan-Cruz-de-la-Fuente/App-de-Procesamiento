@@ -4,8 +4,63 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import io
+import re
 from scipy.spatial import Delaunay
 from codigo_fuente import Auth_Manager as auth
+
+def _calcular_valores_infinito_smn(txt_bytes, timestamp_str):
+    try:
+        df_inf = pd.read_csv(io.BytesIO(txt_bytes), sep=';', skip_blank_lines=True)
+        df_inf.columns = [str(c).strip() for c in df_inf.columns]
+        
+        if len(df_inf.columns) > 2:
+            first_col = df_inf.columns[0]
+            df_inf["ts_clean"] = df_inf[first_col].astype(str).str.split(',').str[0].str.strip()
+            df_inf["dt_val"] = pd.to_datetime(df_inf["ts_clean"], format='%d%m%y%H%M%S', errors='coerce')
+            
+            mask_failed = df_inf["dt_val"].isna()
+            if mask_failed.any():
+                df_inf.loc[mask_failed, "dt_val"] = pd.to_datetime(
+                    df_inf.loc[mask_failed, "ts_clean"], format='%y%m%d%H%M%S', errors='coerce'
+                )
+            df_inf = df_inf.dropna(subset=["dt_val"])
+            
+            if df_inf.empty:
+                return None
+                
+            ts_clean = str(timestamp_str).split(',')[0].strip()
+            target_dt = pd.to_datetime(ts_clean, format='%d%m%y%H%M%S', errors='coerce')
+            if pd.isna(target_dt):
+                target_dt = pd.to_datetime(ts_clean, format='%y%m%d%H%M%S', errors='coerce')
+            
+            if pd.isna(target_dt):
+                return None
+                
+            diffs = (df_inf["dt_val"] - target_dt).abs()
+            idx = diffs.idxmin()
+            row = df_inf.loc[idx]
+            
+            T = float(str(row.get("temp_baro", "15")).replace(",", "."))
+            P_hpa = float(str(row.get("pres_baro", "1013.25")).replace(",", "."))
+            HR = float(str(row.get("hrel", "50")).replace(",", "."))
+            
+            P_pa = P_hpa * 100.0
+            T_kelvin = T + 273.15
+            P_v_sat = 6.1078 * (10 ** ((7.5 * T)/(237.3 + T)))
+            P_v = HR / 100.0 * P_v_sat
+            P_d = P_hpa - P_v
+            rho = (P_d * 100) / (287.058 * T_kelvin) + (P_v * 100) / (461.495 * T_kelvin)
+            v_inf = float(str(row.get("velocidad", "0.0")).replace(",", "."))
+            
+            return {
+                'rho_inf': float(rho),
+                'v_inf': float(v_inf),
+                'p_inf': float(P_pa),
+                't_inf': float(T)
+            }
+    except Exception as e:
+        st.warning(f"Error al vincular valores en el infinito: {e}")
+    return None
 
 def show_smn_3d():
     st.markdown("""
@@ -45,10 +100,38 @@ def show_smn_3d():
     st.subheader("📥 Cargar y Guardar Superficie 3D")
     st.caption("Procesá un CSV de sonda multiagujero para crear una superficie Delaunay 3D interactiva.")
     
-    up_smn_3d = st.file_uploader("Subir archivo de ensayo SMN (.csv)", type=['csv'], key="up_smn_3d")
-    
+    c_u1, c_u2 = st.columns(2)
+    with c_u1:
+        up_smn_3d = st.file_uploader("Subir archivo de ensayo SMN (.csv)", type=['csv'], key="up_smn_3d")
+    with c_u2:
+        up_infinito_3d = st.file_uploader("Subir archivo Valores en el infinito (.txt)", type=['txt'], key="up_infinito_3d")
+
+    timestamp_detectado = None
+    if up_smn_3d:
+        ts_m = re.search(r'(\d{10,14})', up_smn_3d.name)
+        if ts_m:
+            timestamp_detectado = ts_m.group(1)
+            st.info(f"📅 Timestamp detectado en el archivo: `{timestamp_detectado}`")
+        else:
+            st.warning("⚠️ No se detectó un timestamp de 12 dígitos en el nombre del archivo.")
+            ts_input = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_3d")
+            if ts_input:
+                timestamp_detectado = ts_input
+
+    # Procesar Valores en el Infinito
+    if up_infinito_3d and timestamp_detectado:
+        inf_vals = _calcular_valores_infinito_smn(up_infinito_3d.read(), timestamp_detectado)
+        if inf_vals:
+            st.session_state.smn_v_inf = inf_vals['v_inf']
+            st.session_state.smn_rho_inf = inf_vals['rho_inf']
+            st.session_state.smn_p_inf = inf_vals['p_inf']
+            st.session_state.smn_t_inf = inf_vals['t_inf']
+            st.success(f"✅ Valores del infinito vinculados automáticamente: V_∞={inf_vals['v_inf']} m/s, ρ_∞={inf_vals['rho_inf']:.4f} kg/m³")
+            st.rerun()
+            
     if up_smn_3d:
         try:
+            up_smn_3d.seek(0)
             df_raw = pd.read_csv(up_smn_3d, sep=';', decimal=',')
             if 'Posicion Sonda X[mm]' not in df_raw.columns:
                 df_raw = pd.read_csv(up_smn_3d, sep=',', decimal='.')
@@ -62,15 +145,14 @@ def show_smn_3d():
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
                 df_proc['Z'] = df_raw['Posicion Sonda Y[mm]'].astype(float)
                 
+                # Excluir Alfa/Beta/Cp_Alfa/Cp_Beta
                 var_mappings = {
                     'Presion_Est': 'Presion estatica [Pa]',
                     'Presion_Tot': 'Presion total [Pa]',
                     'Vel_Tot': 'Velocidad [m/seg]',
                     'Vx': 'Velocidad X [m/seg]',
                     'Vy': 'Velocidad Y [m/seg]',
-                    'Vz': 'Velocidad Z [m/seg]',
-                    'Alfa': 'Alfa []',
-                    'Beta': 'Beta []'
+                    'Vz': 'Velocidad Z [m/seg]'
                 }
                 for k, col in var_mappings.items():
                     found_col = next((c for c in df_raw.columns if c.replace(' ', '').lower() == col.replace(' ', '').lower() or k.lower() in c.lower()), None)
@@ -92,7 +174,6 @@ def show_smn_3d():
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
             
-    op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn_3d = st.selectbox("Seleccionar Archivo a Guardar en Drive (3D):", op_smn, key="sel_smn_3d_save")
     smn_x_3d = st.number_input("Posición del plano X [mm]:", value=150.0, step=10.0, key="smn_x_3d")
     smn_aoa_3d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_3d")
@@ -105,6 +186,13 @@ def show_smn_3d():
             df_to_save = st.session_state.smn_archivos_memoria[sel_smn_3d].copy()
             df_to_save['Pos_X'] = smn_x_3d
             df_to_save['AOA'] = smn_aoa_3d
+            
+            # GUARDAR VALORES DEL INFINITO EN LA SUPERFICIE
+            df_to_save['V_inf'] = st.session_state.smn_v_inf
+            df_to_save['rho_inf'] = st.session_state.smn_rho_inf
+            df_to_save['P_inf'] = st.session_state.smn_p_inf
+            df_to_save['T_inf'] = st.session_state.smn_t_inf
+            
             json_data = df_to_save.to_json(orient='records')
             if auth.save_surface_data(st.session_state.username, nombre_final_3d, json_data):
                 st.success(f"✅ Guardado en Drive: {nombre_final_3d}")
@@ -137,6 +225,15 @@ def show_smn_3d():
                         if not s_data[4]:
                             s_data[4] = auth.get_surface_data_string(s_data[0])
                         df_active_3d = pd.read_json(io.StringIO(s_data[4]))
+                        
+                        # RESTAURAR VALORES DEL INFINITO
+                        if 'V_inf' in df_active_3d.columns:
+                            st.session_state.smn_v_inf = float(df_active_3d['V_inf'].iloc[0])
+                            st.session_state.smn_rho_inf = float(df_active_3d['rho_inf'].iloc[0])
+                            st.session_state.smn_p_inf = float(df_active_3d['P_inf'].iloc[0])
+                            if 'T_inf' in df_active_3d.columns:
+                                st.session_state.smn_t_inf = float(df_active_3d['T_inf'].iloc[0])
+                                
                         st.session_state.smn_surf_seleccionada = df_active_3d
                         st.session_state.smn_surf_nombre = sel_drv_3d
                         st.session_state.last_drv_smn_3d = sel_drv_3d
@@ -147,7 +244,14 @@ def show_smn_3d():
         else:
             sel_mem_3d = st.selectbox("Seleccionar Superficie en Memoria:", list(st.session_state.smn_archivos_memoria.keys()), key="sel_mem_smn_3d")
             if st.button("📥 Cargar Superficie de Memoria al Visualizador", use_container_width=True, key="btn_load_smn_3d"):
-                st.session_state.smn_surf_seleccionada = st.session_state.smn_archivos_memoria[sel_mem_3d]
+                df_active_3d = st.session_state.smn_archivos_memoria[sel_mem_3d]
+                if 'V_inf' in df_active_3d.columns:
+                    st.session_state.smn_v_inf = float(df_active_3d['V_inf'].iloc[0])
+                    st.session_state.smn_rho_inf = float(df_active_3d['rho_inf'].iloc[0])
+                    st.session_state.smn_p_inf = float(df_active_3d['P_inf'].iloc[0])
+                    if 'T_inf' in df_active_3d.columns:
+                        st.session_state.smn_t_inf = float(df_active_3d['T_inf'].iloc[0])
+                st.session_state.smn_surf_seleccionada = df_active_3d
                 st.session_state.smn_surf_nombre = sel_mem_3d
                 st.success("✅ Superficie cargada.")
                 st.rerun()
@@ -166,9 +270,7 @@ def show_smn_3d():
             'Velocidad inducida Vy [m/s]': 'Vy',
             'Velocidad inducida Vz [m/s]': 'Vz',
             'Coeficiente de Presión Cp Est.': 'Cp_Est',
-            'Coeficiente de Presión Cp Tot.': 'Cp_Tot',
-            'Ángulo Alfa [°]': 'Alfa',
-            'Ángulo Beta [°]': 'Beta'
+            'Coeficiente de Presión Cp Tot.': 'Cp_Tot'
         }
         var_options_3d = {k: v for k, v in var_options_3d.items() if v in df_s.columns}
         

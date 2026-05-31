@@ -4,8 +4,63 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import io
+import re
 from scipy.interpolate import griddata
 from codigo_fuente import Auth_Manager as auth
+
+def _calcular_valores_infinito_smn(txt_bytes, timestamp_str):
+    try:
+        df_inf = pd.read_csv(io.BytesIO(txt_bytes), sep=';', skip_blank_lines=True)
+        df_inf.columns = [str(c).strip() for c in df_inf.columns]
+        
+        if len(df_inf.columns) > 2:
+            first_col = df_inf.columns[0]
+            df_inf["ts_clean"] = df_inf[first_col].astype(str).str.split(',').str[0].str.strip()
+            df_inf["dt_val"] = pd.to_datetime(df_inf["ts_clean"], format='%d%m%y%H%M%S', errors='coerce')
+            
+            mask_failed = df_inf["dt_val"].isna()
+            if mask_failed.any():
+                df_inf.loc[mask_failed, "dt_val"] = pd.to_datetime(
+                    df_inf.loc[mask_failed, "ts_clean"], format='%y%m%d%H%M%S', errors='coerce'
+                )
+            df_inf = df_inf.dropna(subset=["dt_val"])
+            
+            if df_inf.empty:
+                return None
+                
+            ts_clean = str(timestamp_str).split(',')[0].strip()
+            target_dt = pd.to_datetime(ts_clean, format='%d%m%y%H%M%S', errors='coerce')
+            if pd.isna(target_dt):
+                target_dt = pd.to_datetime(ts_clean, format='%y%m%d%H%M%S', errors='coerce')
+            
+            if pd.isna(target_dt):
+                return None
+                
+            diffs = (df_inf["dt_val"] - target_dt).abs()
+            idx = diffs.idxmin()
+            row = df_inf.loc[idx]
+            
+            T = float(str(row.get("temp_baro", "15")).replace(",", "."))
+            P_hpa = float(str(row.get("pres_baro", "1013.25")).replace(",", "."))
+            HR = float(str(row.get("hrel", "50")).replace(",", "."))
+            
+            P_pa = P_hpa * 100.0
+            T_kelvin = T + 273.15
+            P_v_sat = 6.1078 * (10 ** ((7.5 * T)/(237.3 + T)))
+            P_v = HR / 100.0 * P_v_sat
+            P_d = P_hpa - P_v
+            rho = (P_d * 100) / (287.058 * T_kelvin) + (P_v * 100) / (461.495 * T_kelvin)
+            v_inf = float(str(row.get("velocidad", "0.0")).replace(",", "."))
+            
+            return {
+                'rho_inf': float(rho),
+                'v_inf': float(v_inf),
+                'p_inf': float(P_pa),
+                't_inf': float(T)
+            }
+    except Exception as e:
+        st.warning(f"Error al vincular valores en el infinito: {e}")
+    return None
 
 def show_smn_2d():
     st.markdown("""
@@ -41,55 +96,71 @@ def show_smn_2d():
 
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.subheader("📥 Cargar y Guardar Plano 2D")
-    st.caption("Subí un archivo CSV de sonda multiagujero para procesar, calcular coeficientes y mapear.")
+    st.caption("Subí un archivo CSV de sonda multiagujero para procesar y opcionalmente asociale las condiciones del infinito.")
     
-    # 1. Cargador de Archivo Crudo al inicio
-    up_smn_2d = st.file_uploader("Subir archivo de ensayo SMN (.csv) - Ej: datos_fluido_0AOA", type=['csv'], key="up_smn_2d")
-    
+    c_u1, c_u2 = st.columns(2)
+    with c_u1:
+        up_smn_2d = st.file_uploader("Subir archivo de ensayo SMN (.csv) - Ej: datos_fluido_0AOA", type=['csv'], key="up_smn_2d")
+    with c_u2:
+        up_infinito_2d = st.file_uploader("Subir archivo Valores en el infinito (.txt)", type=['txt'], key="up_infinito_2d")
+
+    timestamp_detectado = None
+    if up_smn_2d:
+        ts_m = re.search(r'(\d{10,14})', up_smn_2d.name)
+        if ts_m:
+            timestamp_detectado = ts_m.group(1)
+            st.info(f"📅 Timestamp detectado en el archivo: `{timestamp_detectado}`")
+        else:
+            st.warning("⚠️ No se detectó un timestamp de 12 dígitos en el nombre del archivo. Podés ingresarlo manualmente si subís datos del infinito.")
+            ts_input = st.text_input("Ingresar Timestamp manualmente (DDMMYYHHMMSS):", key="ts_manual_2d")
+            if ts_input:
+                timestamp_detectado = ts_input
+
+    # Procesamiento del archivo infinito si se sube
+    if up_infinito_2d and timestamp_detectado:
+        inf_vals = _calcular_valores_infinito_smn(up_infinito_2d.read(), timestamp_detectado)
+        if inf_vals:
+            st.session_state.smn_v_inf = inf_vals['v_inf']
+            st.session_state.smn_rho_inf = inf_vals['rho_inf']
+            st.session_state.smn_p_inf = inf_vals['p_inf']
+            st.session_state.smn_t_inf = inf_vals['t_inf']
+            st.success(f"✅ Valores del infinito vinculados automáticamente: V_∞={inf_vals['v_inf']} m/s, ρ_∞={inf_vals['rho_inf']:.4f} kg/m³")
+            st.rerun()
+
     if up_smn_2d:
         try:
-            # Intentar leer en formato semicolon / coma
+            up_smn_2d.seek(0)
             df_raw = pd.read_csv(up_smn_2d, sep=';', decimal=',')
             if 'Posicion Sonda X[mm]' not in df_raw.columns:
                 df_raw = pd.read_csv(up_smn_2d, sep=',', decimal='.')
             
-            # Verificar columnas requeridas
             required = ['Posicion Sonda X[mm]', 'Posicion Sonda Y[mm]']
             if not all(col in df_raw.columns for col in required):
-                st.error("❌ El archivo CSV no contiene columnas válidas de posición ('Posicion Sonda X[mm]', 'Posicion Sonda Y[mm]').")
+                st.error("❌ El archivo CSV no contiene columnas válidas de posición.")
             else:
                 st.success(f"✅ Archivo leído correctamente: {len(df_raw)} puntos de control.")
                 
-                # Convertir columnas a variables estándar de graficación
                 df_proc = pd.DataFrame()
                 df_proc['Y'] = df_raw['Posicion Sonda X[mm]'].astype(float)
                 df_proc['Z'] = df_raw['Posicion Sonda Y[mm]'].astype(float)
                 
-                # Variables físicas mapeadas
+                # SÓLO las 6 variables físicas de interés (excluyendo Alfa, Beta, Cp_Alfa, Cp_Beta)
                 var_mappings = {
                     'Presion_Est': 'Presion estatica [Pa]',
                     'Presion_Tot': 'Presion total [Pa]',
                     'Vel_Tot': 'Velocidad [m/seg]',
                     'Vx': 'Velocidad X [m/seg]',
                     'Vy': 'Velocidad Y [m/seg]',
-                    'Vz': 'Velocidad Z [m/seg]',
-                    'Alfa': 'Alfa []',
-                    'Beta': 'Beta []',
-                    'Cp_Alfa': 'Cp Alfa []',
-                    'Cp_Beta': 'Cp Beta []'
+                    'Vz': 'Velocidad Z [m/seg]'
                 }
                 
                 for k, col in var_mappings.items():
-                    # Buscar coincidencia exacta o parecida por acentos / caracteres raros
                     found_col = next((c for c in df_raw.columns if c.replace(' ', '').lower() == col.replace(' ', '').lower() or k.lower() in c.lower()), None)
-                    if found_col is None and '' in col:
-                        found_col = next((c for c in df_raw.columns if 'alfa' in c.lower() or 'beta' in c.lower()), None)
                     if found_col is not None:
                         df_proc[k] = df_raw[found_col].astype(float)
                     else:
                         df_proc[k] = 0.0
                 
-                # Calcular coeficientes adimensionales
                 q_inf = 0.5 * st.session_state.smn_rho_inf * (st.session_state.smn_v_inf ** 2)
                 if q_inf != 0:
                     df_proc['Cp_Est'] = (df_proc['Presion_Est'] - st.session_state.smn_p_inf) / q_inf
@@ -98,13 +169,11 @@ def show_smn_2d():
                     df_proc['Cp_Est'] = 0.0
                     df_proc['Cp_Tot'] = 0.0
                     
-                # Guardar archivo procesado en memoria de sesión
                 name_mem = up_smn_2d.name.replace('.csv', '')
                 st.session_state.smn_archivos_memoria[name_mem] = df_proc
         except Exception as e:
             st.error(f"Error procesando CSV: {e}")
             
-    # 2. Guardado en Google Drive
     op_smn = list(st.session_state.smn_archivos_memoria.keys()) if st.session_state.smn_archivos_memoria else ["No hay archivos"]
     sel_smn = st.selectbox("Seleccionar Archivo a Guardar en Drive:", op_smn, key="sel_smn_2d_save")
     
@@ -120,6 +189,13 @@ def show_smn_2d():
             df_to_save = st.session_state.smn_archivos_memoria[sel_smn].copy()
             df_to_save['Pos_X'] = smn_x
             df_to_save['AOA'] = smn_aoa
+            
+            # VINCULAR Y GUARDAR VALORES DEL INFINITO EN EL CSV
+            df_to_save['V_inf'] = st.session_state.smn_v_inf
+            df_to_save['rho_inf'] = st.session_state.smn_rho_inf
+            df_to_save['P_inf'] = st.session_state.smn_p_inf
+            df_to_save['T_inf'] = st.session_state.smn_t_inf
+            
             csv_bytes = df_to_save.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
             if auth.save_csv_2d(st.session_state.username, f"{nombre_final_2d}.csv", csv_bytes):
                 st.success(f"✅ Guardado en Drive: {nombre_final_2d}.csv")
@@ -136,7 +212,6 @@ def show_smn_2d():
     if modo_carga_2d == "🗄️ Base de Datos (Drive)":
         try:
             drv_files = auth.get_user_files_2d(st.session_state.username)
-            # Filtrar solo archivos de SMN
             drv_files_smn = [f for f in drv_files if f[1].startswith("SMN-2D-")]
         except:
             drv_files_smn = []
@@ -154,6 +229,15 @@ def show_smn_2d():
                             df_active = pd.read_csv(io.BytesIO(raw), sep=';', decimal=',')
                             if 'Y' not in df_active.columns:
                                 df_active = pd.read_csv(io.BytesIO(raw), sep=',', decimal='.')
+                            
+                            # RESTAURAR VALORES DEL INFINITO GUARDADOS EN EL ARCHIVO
+                            if 'V_inf' in df_active.columns:
+                                st.session_state.smn_v_inf = float(df_active['V_inf'].iloc[0])
+                                st.session_state.smn_rho_inf = float(df_active['rho_inf'].iloc[0])
+                                st.session_state.smn_p_inf = float(df_active['P_inf'].iloc[0])
+                                if 'T_inf' in df_active.columns:
+                                    st.session_state.smn_t_inf = float(df_active['T_inf'].iloc[0])
+                                    
                             st.session_state.smn_matriz_seleccionada = df_active
                             st.session_state.last_drv_smn_2d = sel_drv
                             st.rerun()
@@ -163,7 +247,14 @@ def show_smn_2d():
         else:
             sel_mem = st.selectbox("Seleccionar Plano en Memoria:", list(st.session_state.smn_archivos_memoria.keys()), key="sel_mem_smn_2d")
             if st.button("📥 Cargar Plano de Memoria al Visualizador", use_container_width=True):
-                st.session_state.smn_matriz_seleccionada = st.session_state.smn_archivos_memoria[sel_mem]
+                df_active = st.session_state.smn_archivos_memoria[sel_mem]
+                if 'V_inf' in df_active.columns:
+                    st.session_state.smn_v_inf = float(df_active['V_inf'].iloc[0])
+                    st.session_state.smn_rho_inf = float(df_active['rho_inf'].iloc[0])
+                    st.session_state.smn_p_inf = float(df_active['P_inf'].iloc[0])
+                    if 'T_inf' in df_active.columns:
+                        st.session_state.smn_t_inf = float(df_active['T_inf'].iloc[0])
+                st.session_state.smn_matriz_seleccionada = df_active
                 st.success("✅ Plano cargado correctamente.")
                 st.rerun()
                 
@@ -181,9 +272,7 @@ def show_smn_2d():
             'Velocidad inducida Vy [m/s]': 'Vy',
             'Velocidad inducida Vz [m/s]': 'Vz',
             'Coeficiente de Presión Cp Est.': 'Cp_Est',
-            'Coeficiente de Presión Cp Tot.': 'Cp_Tot',
-            'Ángulo Alfa [°]': 'Alfa',
-            'Ángulo Beta [°]': 'Beta'
+            'Coeficiente de Presión Cp Tot.': 'Cp_Tot'
         }
         var_options = {k: v for k, v in var_options.items() if v in df_m.columns}
         
