@@ -195,8 +195,17 @@ def show_smn_3d():
     smn_x_3d = st.number_input("Posición del plano X [mm]:", value=150.0, step=10.0, key="smn_x_3d")
     smn_aoa_3d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_3d")
     
+    # Generación dinámica del nombre
     nombre_auto_3d = f"SMN-3D-X{int(smn_x_3d)}-OAO{str(smn_aoa_3d).replace('-','neg')}-T0s"
-    nombre_final_3d = st.text_input("Nombre de la Superficie en Drive:", value=nombre_auto_3d, key="name_final_3d")
+    if 'last_nombre_auto_3d' not in st.session_state:
+        st.session_state.last_nombre_auto_3d = nombre_auto_3d
+        st.session_state.name_final_3d = nombre_auto_3d
+        
+    if st.session_state.last_nombre_auto_3d != nombre_auto_3d:
+        st.session_state.name_final_3d = nombre_auto_3d
+        st.session_state.last_nombre_auto_3d = nombre_auto_3d
+        
+    nombre_final_3d = st.text_input("Nombre de la Superficie en Drive:", key="name_final_3d")
     
     if st.button("🚀 SUBIR SUPERFICIE A DRIVE (SMN 3D)", use_container_width=True, type="primary", disabled=not st.session_state.smn_archivos_memoria):
         if sel_smn_3d in st.session_state.smn_archivos_memoria:
@@ -220,8 +229,8 @@ def show_smn_3d():
             df_to_save['T_inf'] = st.session_state.smn_t_inf
             
             json_data = df_to_save.to_json(orient='records')
-            if auth.save_surface_data(st.session_state.username, nombre_final_3d, json_data):
-                st.success(f"✅ Guardado en Drive: {nombre_final_3d}")
+            if auth.save_smn_3d(st.session_state.username, nombre_final_3d, json_data):
+                st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/3D): {nombre_final_3d}")
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -234,8 +243,7 @@ def show_smn_3d():
     df_active_3d = pd.DataFrame()
     if modo_carga_3d == "🗄️ Base de Datos (Drive)":
         try:
-            drv_surfs = auth.get_user_surfaces(st.session_state.username)
-            drv_surfs_smn = [s for s in drv_surfs if s[1].startswith("SMN-3D-")]
+            drv_surfs_smn = auth.get_smn_surfaces_3d(st.session_state.username)
         except:
             drv_surfs_smn = []
             

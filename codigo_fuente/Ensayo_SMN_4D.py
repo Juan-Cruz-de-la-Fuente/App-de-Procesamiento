@@ -210,8 +210,17 @@ def show_smn_4d():
     smn_x_4d = st.number_input("Posición en Estación X [mm]:", value=150.0, step=10.0, key="smn_x_4d")
     smn_aoa_4d = st.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_4d")
     
+    # Generación dinámica del nombre
     nombre_auto_4d = f"SMN-4D-X{int(smn_x_4d)}-OAO{str(smn_aoa_4d).replace('-','neg')}-T0s"
-    nombre_final_4d = st.text_input("Nombre de la Estación 4D en Drive:", value=nombre_auto_4d, key="name_final_4d")
+    if 'last_nombre_auto_4d' not in st.session_state:
+        st.session_state.last_nombre_auto_4d = nombre_auto_4d
+        st.session_state.name_final_4d = nombre_auto_4d
+        
+    if st.session_state.last_nombre_auto_4d != nombre_auto_4d:
+        st.session_state.name_final_4d = nombre_auto_4d
+        st.session_state.last_nombre_auto_4d = nombre_auto_4d
+        
+    nombre_final_4d = st.text_input("Nombre de la Estación 4D en Drive:", key="name_final_4d")
     
     if st.button("🚀 SUBIR PLANO A DRIVE (SMN 4D)", use_container_width=True, type="primary", disabled=not st.session_state.smn_archivos_memoria):
         if sel_smn_4d in st.session_state.smn_archivos_memoria:
@@ -235,8 +244,8 @@ def show_smn_4d():
             df_to_save['T_inf'] = st.session_state.smn_t_inf
             
             json_data = df_to_save.to_json(orient='records')
-            if auth.save_surface_data_4d(st.session_state.username, nombre_final_4d, smn_x_4d, json_data):
-                st.success(f"✅ Guardado en Drive: {nombre_final_4d}")
+            if auth.save_smn_4d(st.session_state.username, nombre_final_4d, smn_x_4d, json_data):
+                st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/4D): {nombre_final_4d}")
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -245,8 +254,7 @@ def show_smn_4d():
     # 1. Selección de múltiples planos
     st.markdown("### 📥 PASO 2: Selección Multicapa (Múltiples Planos)")
     try:
-        planos_drv = auth.get_user_surfaces_4d(st.session_state.username)
-        planos_drv_smn = [p for p in planos_drv if p[1].startswith("SMN-4D-")]
+        planos_drv_smn = auth.get_smn_surfaces_4d(st.session_state.username)
     except Exception:
         planos_drv_smn = []
 

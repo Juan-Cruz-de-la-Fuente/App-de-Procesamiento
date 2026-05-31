@@ -475,3 +475,169 @@ def get_csv_content_1d(username, filename):
 def get_folder_datafusion(username):
     """Exhibe la carpeta principal de Data Fusion."""
     return drive_api.get_folder_datafusion(username)
+
+
+# ---------------------------------------------------------------------------
+# SONDA MULTIAGUJERO (SMN)  →  usuario / ENSAYO SMN /
+# ---------------------------------------------------------------------------
+
+def save_smn_2d(username, filename, csv_bytes):
+    """Guarda un plano SMN 2D (CSV) en Drive → usuario/ENSAYO SMN/2D/."""
+    folder_id = drive_api.get_folder_smn_2d(username)
+    if not folder_id:
+        return False
+    file_id = drive_api.upload_file(csv_bytes, filename, folder_id, mimetype='text/csv')
+    return file_id is not None
+
+def save_smn_3d(username, filename, data_json):
+    """Guarda una superficie SMN 3D (JSON) en Drive → usuario/ENSAYO SMN/3D/."""
+    folder_id = drive_api.get_folder_smn_3d(username)
+    if not folder_id:
+        return False
+    safe_filename = str(filename).replace("/", "-").replace("____", "_")
+    drive_filename = f"SMN3D____{safe_filename}.json"
+    file_id = drive_api.upload_file(data_json, drive_filename, folder_id)
+    return file_id is not None
+
+def save_smn_4d(username, filename, x_position, data_json):
+    """Guarda un plano SMN 4D (JSON) en Drive → usuario/ENSAYO SMN/4D/."""
+    folder_id = drive_api.get_folder_smn_4d(username)
+    if not folder_id:
+        return False
+    safe_filename = str(filename).replace("/", "-").replace("____", "_")
+    drive_filename = f"SMN4D____{safe_filename}____{x_position}.json"
+    file_id = drive_api.upload_file(data_json, drive_filename, folder_id)
+    return file_id is not None
+
+def get_smn_files_2d(username):
+    """Lista archivos CSV de la carpeta SMN 2D + archivos SMN heredados de ESTELA 2D."""
+    import streamlit as st
+    folder_id = drive_api.get_folder_smn_2d(username)
+    legacy_id = drive_api.get_folder_2d(username)
+    
+    @st.cache_data(ttl=300, show_spinner=False)
+    def fetch_all_smn_2d(fid, lid):
+        all_res = []
+        if fid:
+            fs = drive_api.list_files(fid)
+            for f in fs:
+                name = f.get('name', '')
+                if name.endswith('.csv'):
+                    all_res.append((f['id'], name, f.get('createdTime'), None))
+        if lid:
+            legacy_fs = drive_api.list_files(lid)
+            for f in legacy_fs:
+                name = f.get('name', '')
+                if name.endswith('.csv') and name.startswith('SMN-'):
+                    all_res.append((f['id'], name, f.get('createdTime'), None))
+        
+        seen = set()
+        unique_res = []
+        for item in all_res:
+            if item[1] not in seen:
+                seen.add(item[1])
+                unique_res.append(item)
+        return sorted(unique_res, key=lambda x: x[2] or '', reverse=True)
+        
+    return fetch_all_smn_2d(folder_id, legacy_id)
+
+def get_smn_surfaces_3d(username):
+    """Lista archivos JSON de la carpeta SMN 3D + archivos heredados de ESTELA 3D."""
+    import streamlit as st
+    folder_id = drive_api.get_folder_smn_3d(username)
+    legacy_id = drive_api.get_folder_3d(username)
+    
+    @st.cache_data(ttl=300, show_spinner=False)
+    def fetch_all_smn_3d(fid, lid):
+        all_res = []
+        if fid:
+            fs = drive_api.list_files(fid)
+            for f in fs:
+                name = f.get('name', '')
+                if name.startswith('SMN3D____'):
+                    parts = name.replace('.json', '').split('____')
+                    fname = parts[1] if len(parts) >= 2 else name
+                    all_res.append((f['id'], fname, 0.0, f.get('createdTime'), None))
+        if lid:
+            legacy_fs = drive_api.list_files(lid)
+            for f in legacy_fs:
+                name = f.get('name', '')
+                if name.startswith('3D____'):
+                    parts = name.replace('.json', '').split('____')
+                    fname = parts[1] if len(parts) >= 2 else name
+                    if fname.startswith('SMN-'):
+                        all_res.append((f['id'], fname, 0.0, f.get('createdTime'), None))
+                elif name.startswith('SURF____'):
+                    parts = name.replace('.json', '').split('____')
+                    if len(parts) < 3:
+                        fname = parts[1] if len(parts) >= 2 else name.replace('.json', '')
+                        if fname.startswith('SMN-'):
+                            all_res.append((f['id'], fname, 0.0, f.get('createdTime'), None))
+        
+        seen = set()
+        unique_res = []
+        for item in all_res:
+            if item[1] not in seen:
+                seen.add(item[1])
+                unique_res.append(item)
+        return sorted(unique_res, key=lambda x: x[3] or '', reverse=True)
+        
+    return fetch_all_smn_3d(folder_id, legacy_id)
+
+def get_smn_surfaces_4d(username):
+    """Lista archivos JSON de la carpeta SMN 4D + archivos heredados de ESTELA 4D."""
+    import streamlit as st
+    folder_id = drive_api.get_folder_smn_4d(username)
+    legacy_id = drive_api.get_folder_4d(username)
+    
+    @st.cache_data(ttl=300, show_spinner=False)
+    def fetch_all_smn_4d(fid, lid):
+        all_res = []
+        if fid:
+            fs = drive_api.list_files(fid)
+            for f in fs:
+                name = f.get('name', '')
+                if name.startswith('SMN4D____'):
+                    parts = name.replace('.json', '').split('____')
+                    if len(parts) >= 3:
+                        fname = parts[1]
+                        try:
+                            x_pos = float(parts[2])
+                        except Exception:
+                            x_pos = 0.0
+                        all_res.append((f['id'], fname, x_pos, f.get('createdTime'), None))
+        if lid:
+            legacy_fs = drive_api.list_files(lid)
+            for f in legacy_fs:
+                name = f.get('name', '')
+                if name.startswith('4D____'):
+                    parts = name.replace('.json', '').split('____')
+                    if len(parts) >= 3:
+                        fname = parts[1]
+                        if fname.startswith('SMN-'):
+                            try:
+                                x_pos = float(parts[2])
+                            except Exception:
+                                x_pos = 0.0
+                            all_res.append((f['id'], fname, x_pos, f.get('createdTime'), None))
+                elif name.startswith('SURF____'):
+                    parts = name.replace('.json', '').split('____')
+                    if len(parts) >= 3:
+                        fname = parts[1]
+                        if fname.startswith('SMN-'):
+                            try:
+                                x_pos = float(parts[2])
+                            except Exception:
+                                x_pos = 0.0
+                            all_res.append((f['id'], fname, x_pos, f.get('createdTime'), None))
+                            
+        seen = set()
+        unique_res = []
+        for item in all_res:
+            combo = f"{item[1]}_X{item[2]}"
+            if combo not in seen:
+                seen.add(combo)
+                unique_res.append(item)
+        return sorted(unique_res, key=lambda x: x[2])
+        
+    return fetch_all_smn_4d(folder_id, legacy_id)

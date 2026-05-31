@@ -23,6 +23,7 @@ FOLDER_VTK_PLANOS    = 'PLANOS DE PRESION'
 FOLDER_VTK_SUPERF    = 'SUPERFICIES 3D'
 FOLDER_MODELOS       = 'MODELOS 3D'
 FOLDER_DATAFUSION    = 'DATA FUSION'
+FOLDER_SMN           = 'ENSAYO SMN'
 
 
 def get_service():
@@ -101,6 +102,10 @@ def init_user_folders(username):
     folder_3d     = get_or_create_folder(FOLDER_3D, estela_id)
     folder_4d     = get_or_create_folder(FOLDER_4D, estela_id)
     folder_anim   = get_or_create_folder(FOLDER_ANIMACION, estela_id)
+    smn_id        = get_or_create_folder(FOLDER_SMN, user_id)
+    smn_folder_2d = get_or_create_folder(FOLDER_2D, smn_id)
+    smn_folder_3d = get_or_create_folder(FOLDER_3D, smn_id)
+    smn_folder_4d = get_or_create_folder(FOLDER_4D, smn_id)
 
     vtk_id        = get_or_create_folder(FOLDER_VTK, herr_id)
     vtk_planos_id = get_or_create_folder(FOLDER_VTK_PLANOS, vtk_id)
@@ -120,6 +125,10 @@ def init_user_folders(username):
         'vtk_superf':   vtk_superf_id,
         'modelos':      modelos_id,
         'datafusion':   datafusion_id,
+        'smn':          smn_id,
+        'smn_2d':       smn_folder_2d,
+        'smn_3d':       smn_folder_3d,
+        'smn_4d':       smn_folder_4d,
     }
 
 
@@ -150,6 +159,21 @@ def get_folder_4d(username):
 def get_folder_datafusion(username):
     uid = get_user_root(username)
     return get_or_create_folder(FOLDER_DATAFUSION, uid)
+
+def get_folder_smn_2d(username):
+    uid = get_user_root(username)
+    smn_id = get_or_create_folder(FOLDER_SMN, uid)
+    return get_or_create_folder(FOLDER_2D, smn_id)
+
+def get_folder_smn_3d(username):
+    uid = get_user_root(username)
+    smn_id = get_or_create_folder(FOLDER_SMN, uid)
+    return get_or_create_folder(FOLDER_3D, smn_id)
+
+def get_folder_smn_4d(username):
+    uid = get_user_root(username)
+    smn_id = get_or_create_folder(FOLDER_SMN, uid)
+    return get_or_create_folder(FOLDER_4D, smn_id)
 
 def get_folder_animacion(username):
     """Devuelve (creando si no existe) la carpeta ANIMACION del usuario.

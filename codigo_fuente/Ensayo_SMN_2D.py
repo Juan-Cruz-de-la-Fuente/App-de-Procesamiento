@@ -198,8 +198,17 @@ def show_smn_2d():
     smn_x = c_p1.number_input("Posición del plano X [mm]:", value=150.0, step=10.0, key="smn_x_2d")
     smn_aoa = c_p2.number_input("Ángulo AOA [°]:", value=0.0, step=1.0, key="smn_aoa_2d")
     
+    # Generación dinámica del nombre
     nombre_auto_2d = f"SMN-2D-X{int(smn_x)}-OAO{str(smn_aoa).replace('-','neg')}-T0s"
-    nombre_final_2d = st.text_input("Nombre del archivo en Drive:", value=nombre_auto_2d, key="name_final_2d")
+    if 'last_nombre_auto_2d' not in st.session_state:
+        st.session_state.last_nombre_auto_2d = nombre_auto_2d
+        st.session_state.name_final_2d = nombre_auto_2d
+        
+    if st.session_state.last_nombre_auto_2d != nombre_auto_2d:
+        st.session_state.name_final_2d = nombre_auto_2d
+        st.session_state.last_nombre_auto_2d = nombre_auto_2d
+        
+    nombre_final_2d = st.text_input("Nombre del archivo en Drive:", key="name_final_2d")
     
     if st.button("🚀 SUBIR MATRIZ A DRIVE (SMN 2D)", use_container_width=True, type="primary", disabled=not st.session_state.smn_archivos_memoria):
         if sel_smn in st.session_state.smn_archivos_memoria:
@@ -223,8 +232,8 @@ def show_smn_2d():
             df_to_save['T_inf'] = st.session_state.smn_t_inf
             
             csv_bytes = df_to_save.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
-            if auth.save_csv_2d(st.session_state.username, f"{nombre_final_2d}.csv", csv_bytes):
-                st.success(f"✅ Guardado en Drive: {nombre_final_2d}.csv")
+            if auth.save_smn_2d(st.session_state.username, f"{nombre_final_2d}.csv", csv_bytes):
+                st.success(f"✅ Guardado en Drive (Carpeta ENSAYO SMN/2D): {nombre_final_2d}.csv")
             else:
                 st.error("Error al guardar en Drive.")
                 
@@ -237,8 +246,7 @@ def show_smn_2d():
     df_active = pd.DataFrame()
     if modo_carga_2d == "🗄️ Base de Datos (Drive)":
         try:
-            drv_files = auth.get_user_files_2d(st.session_state.username)
-            drv_files_smn = [f for f in drv_files if f[1].startswith("SMN-2D-")]
+            drv_files_smn = auth.get_smn_files_2d(st.session_state.username)
         except:
             drv_files_smn = []
             
