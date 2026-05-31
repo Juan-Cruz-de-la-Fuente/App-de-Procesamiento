@@ -12,3 +12,5 @@ matplotlib
 python-dotenv
 opencv-python-headless
 streamlit-image-coordinates
+trimesh
+cascadio

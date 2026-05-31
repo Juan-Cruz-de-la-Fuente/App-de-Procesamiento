@@ -105,10 +105,10 @@ def show_modelos():
                                 st.error("Error al eliminar")
 
         else:
-            st.markdown("##### 📂 Cargar Archivo STL o CSV")
+            st.markdown("##### 📂 Cargar Archivo STL, STEP o CSV")
             st.caption("El modelo se importa con los ejes del archivo. Los desplazamientos se configuran en 4D.")
             use_auto_center_imp = st.checkbox(" Auto-centrar objeto", value=True, key="auto_center_imp")
-            file_obj = st.file_uploader("Cargar archivo (STL o CSV):", type=['csv', 'stl'], key="uploader_modelo_imp")
+            file_obj = st.file_uploader("Cargar archivo (STL, STEP, STP o CSV):", type=['csv', 'stl', 'step', 'stp'], key="uploader_modelo_imp")
 
             if file_obj and st.button("📥 Procesar e importar", type="primary", use_container_width=True, key="btn_importar_modelo"):
                 file_ext = file_obj.name.split('.')[-1].lower()
@@ -188,6 +188,52 @@ def show_modelos():
                             obj_type = 'mesh'
                         except Exception as parse_e:
                             st.error(f"Error procesando el archivo STL: {parse_e}")
+                            st.stop()
+
+                    elif file_ext in ['step', 'stp']:
+                        import trimesh
+                        import cascadio
+                        import io
+                        
+                        file_bytes = file_obj.read()
+                        
+                        try:
+                            # Guardar temporalmente los bytes del archivo step para cascadio
+                            with tempfile.NamedTemporaryFile(suffix=f".{file_ext}", delete=False) as tmp:
+                                tmp.write(file_bytes)
+                                tmp_path = tmp.name
+                            
+                            try:
+                                # Convertir STEP a GLB en memoria
+                                glb_bytes = cascadio.convert_to_glb(tmp_path, file_type="step")
+                                
+                                # Cargar con trimesh
+                                mesh = trimesh.load(io.BytesIO(glb_bytes), file_type="glb")
+                                
+                                # Si es un Scene (grupo de mallas), fusionamos
+                                if isinstance(mesh, trimesh.Scene):
+                                    if len(mesh.geometry) == 0:
+                                        raise ValueError("El archivo STEP no contiene geometrías válidas.")
+                                    mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
+                                    
+                                v_arr = np.array(mesh.vertices, dtype=np.float64)
+                                f_arr = np.array(mesh.faces, dtype=np.int32)
+                                
+                                x_points = v_arr[:, 0]
+                                y_points = v_arr[:, 1]
+                                z_points = v_arr[:, 2]
+                                faces_i = f_arr[:, 0]
+                                faces_j = f_arr[:, 1]
+                                faces_k = f_arr[:, 2]
+                                obj_type = 'mesh'
+                            finally:
+                                # Limpiar archivo temporal
+                                try:
+                                    os.unlink(tmp_path)
+                                except:
+                                    pass
+                        except Exception as parse_e:
+                            st.error(f"Error procesando el archivo STEP/STP: {parse_e}")
                             st.stop()
 
                     if x_points is not None:
