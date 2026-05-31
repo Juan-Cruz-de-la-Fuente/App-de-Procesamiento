@@ -196,19 +196,22 @@ def show_modelos():
                         import io
                         
                         file_bytes = file_obj.read()
-                        
                         try:
                             # Guardar temporalmente los bytes del archivo step para cascadio
                             with tempfile.NamedTemporaryFile(suffix=f".{file_ext}", delete=False) as tmp:
                                 tmp.write(file_bytes)
                                 tmp_path = tmp.name
                             
+                            # Crear una ruta temporal para el archivo GLB de salida
+                            with tempfile.NamedTemporaryFile(suffix=".glb", delete=False) as tmp_glb:
+                                tmp_glb_path = tmp_glb.name
+                            
                             try:
-                                # Convertir STEP a GLB en memoria
-                                glb_bytes = cascadio.convert_to_glb(tmp_path, file_type="step")
+                                # Convertir STEP a GLB escribiendo al archivo temporal
+                                cascadio.step_to_glb(tmp_path, tmp_glb_path)
                                 
-                                # Cargar con trimesh
-                                mesh = trimesh.load(io.BytesIO(glb_bytes), file_type="glb")
+                                # Cargar con trimesh desde el archivo
+                                mesh = trimesh.load(tmp_glb_path, file_type="glb")
                                 
                                 # Si es un Scene (grupo de mallas), fusionamos
                                 if isinstance(mesh, trimesh.Scene):
@@ -227,9 +230,13 @@ def show_modelos():
                                 faces_k = f_arr[:, 2]
                                 obj_type = 'mesh'
                             finally:
-                                # Limpiar archivo temporal
+                                # Limpiar archivos temporales
                                 try:
                                     os.unlink(tmp_path)
+                                except:
+                                    pass
+                                try:
+                                    os.unlink(tmp_glb_path)
                                 except:
                                     pass
                         except Exception as parse_e:
