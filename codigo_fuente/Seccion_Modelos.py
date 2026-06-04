@@ -366,7 +366,13 @@ def show_modelos():
             fig_prev = go.Figure()
 
             if obj['type'] == 'mesh':
-                fig_prev.add_trace(go.Mesh3d(x=obj['x'], y=obj['y'], z=obj['z'], i=obj['i'], j=obj['j'], k=obj['k'], color='#4a90d9', opacity=0.75, name=obj['name'], alphahull=0))
+                fig_prev.add_trace(go.Mesh3d(
+                    x=obj['x'], y=obj['y'], z=obj['z'], 
+                    i=obj['i'], j=obj['j'], k=obj['k'], 
+                    color='#4a90d9', opacity=0.85, name=obj['name'], 
+                    flatshading=False, 
+                    lighting=dict(ambient=0.4, diffuse=0.8, specular=0.5, roughness=0.1)
+                ))
             else:
                 fig_prev.add_trace(go.Scatter3d(x=obj['x'], y=obj['y'], z=obj['z'], mode='markers', marker=dict(size=2, color='#4a90d9'), name=obj['name']))
 
