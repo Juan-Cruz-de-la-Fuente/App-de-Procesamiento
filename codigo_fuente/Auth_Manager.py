@@ -293,6 +293,7 @@ def get_user_objects(username):
 
 
 def delete_user_object(object_id):
+    from codigo_fuente import Drive_Connection as drive_api
     drive_api.delete_file(object_id)
 
 
