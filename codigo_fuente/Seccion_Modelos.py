@@ -107,7 +107,13 @@ def show_modelos():
         else:
             st.markdown("##### 📂 Cargar Archivo STL, OBJ, STEP o CSV")
             st.caption("El modelo se importa con los ejes del archivo. Los desplazamientos se configuran en 4D.")
-            use_auto_center_imp = st.checkbox(" Auto-centrar objeto", value=True, key="auto_center_imp")
+            
+            col_opts1, col_opts2 = st.columns(2)
+            with col_opts1:
+                use_auto_center_imp = st.checkbox(" Auto-centrar objeto", value=True, key="auto_center_imp")
+            with col_opts2:
+                escala_imp = st.number_input("Factor de Escala (Multiplicador)", value=1.0, step=0.1, format="%.5f", key="escala_imp", help="Usa 0.001 si tu archivo está en milímetros y quieres pasarlo a metros.")
+
             file_obj = st.file_uploader("Cargar archivo (STL, OBJ, STEP, STP o CSV):", type=['csv', 'stl', 'obj', 'step', 'stp'], key="uploader_modelo_imp")
 
             if file_obj and st.button("📥 Procesar e importar", type="primary", use_container_width=True, key="btn_importar_modelo"):
@@ -281,6 +287,11 @@ def show_modelos():
                             st.stop()
 
                     if x_points is not None:
+                        # Aplicar factor de escala
+                        x_points = x_points * escala_imp
+                        y_points = y_points * escala_imp
+                        z_points = z_points * escala_imp
+
                         if use_auto_center_imp:
                             cx = (np.min(x_points) + np.max(x_points)) / 2
                             cy = (np.min(y_points) + np.max(y_points)) / 2
