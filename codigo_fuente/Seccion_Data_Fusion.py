@@ -1149,4 +1149,31 @@ def show_data_fusion():
             st.plotly_chart(fig, use_container_width=True)
             st.balloons()
             
+            st.markdown("---")
+            c_down, _ = st.columns([1, 1])
+            with c_down:
+                st.markdown("##### 📥 Exportar para Paraview / MeshLab")
+                st.caption("Descarga la malla 3D con los colores incrustados en formato estándar.")
+                try:
+                    import trimesh
+                    v_off = v.copy()
+                    v_off[:, 0] += st.session_state.df_offset_x
+                    v_off[:, 1] += st.session_state.df_offset_y
+                    v_off[:, 2] += st.session_state.df_offset_z
+                    
+                    colors_rgb = [tuple(map(int, c.replace('rgb(', '').replace(')', '').split(','))) for c in st.session_state.df_face_colors]
+                    mesh_exp = trimesh.Trimesh(vertices=v_off, faces=f_arr, face_colors=colors_rgb)
+                    ply_bytes = mesh_exp.export(file_type='ply')
+                    
+                    st.download_button(
+                        label="⬇️ Descargar Modelo (.PLY)", 
+                        data=ply_bytes, 
+                        file_name=f"{st.session_state.df_project_name}_Texturizado.ply", 
+                        mime="application/octet-stream", 
+                        use_container_width=True,
+                        type="primary"
+                    )
+                except Exception as e:
+                    st.error(f"Error generando exportación: {e}")
+            
         st.markdown("</div>", unsafe_allow_html=True)
