@@ -255,7 +255,7 @@ else:
         from codigo_fuente.Ensayo_Estela_Interpolacion import show_interpolacion
         show_interpolacion()
     elif st.session_state.seccion_actual == 'modelos':
-        from codigo_fuente.Ensayo_Estela_Modelos_3D import show_modelos
+        from codigo_fuente.Seccion_Modelos import show_modelos
         show_modelos()
     elif st.session_state.seccion_actual == 'data_fusion':
         from codigo_fuente.Seccion_Data_Fusion import show_data_fusion

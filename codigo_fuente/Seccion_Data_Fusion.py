@@ -427,7 +427,22 @@ def show_data_fusion():
                 st.caption("No se encontraron proyectos guardados en Drive.")
             else:
                 proj_dict = {p['name']: p for p in projects}
-                sel_proj = st.selectbox("Seleccionar Proyecto:", ["-- Seleccionar Proyecto --"] + list(proj_dict.keys()), key="df_load_project_ui")
+                c_sel, c_del = st.columns([4, 1])
+                with c_sel:
+                    sel_proj = st.selectbox("Seleccionar Proyecto:", ["-- Seleccionar Proyecto --"] + list(proj_dict.keys()), key="df_load_project_ui")
+                with c_del:
+                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    if sel_proj != "-- Seleccionar Proyecto --":
+                        if st.button("🗑️", help="Eliminar este proyecto", key="btn_del_df_proj", use_container_width=True):
+                            with st.spinner("Eliminando proyecto de Drive..."):
+                                drive_api.delete_file(proj_dict[sel_proj]['id'])
+                                if st.session_state.df_project_name == sel_proj:
+                                    st.session_state.df_project_id = None
+                                    st.session_state.df_project_name = ""
+                                    st.session_state.df_images = []
+                            st.success(f"Proyecto {sel_proj} eliminado.")
+                            st.rerun()
+
                 if sel_proj != "-- Seleccionar --" and sel_proj != "-- Seleccionar Proyecto --":
                     if st.session_state.df_project_name != sel_proj:
                         proj_info = proj_dict[sel_proj]
