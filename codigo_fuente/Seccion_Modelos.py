@@ -100,9 +100,10 @@ def show_modelos():
                             try:
                                 auth.delete_user_object(obj_id)
                                 st.session_state.modelo_nombre_bd = None
+                                st.cache_data.clear()
                                 st.rerun()
-                            except:
-                                st.error("Error al eliminar")
+                            except Exception as e:
+                                st.error(f"Error al eliminar: {e}")
 
         else:
             st.markdown("##### 📂 Cargar Archivo STL, OBJ, STEP o CSV")
@@ -353,6 +354,7 @@ def show_modelos():
                         if auth.save_user_object(st.session_state.username, nombre_modelo, obj_to_save['type'], json_str):
                             st.success(f"✅ Guardado.")
                             st.session_state.modelo_nombre_bd = nombre_modelo
+                            st.cache_data.clear()
                     except Exception as e:
                         st.error(f"Error serializando: {e}")
 
