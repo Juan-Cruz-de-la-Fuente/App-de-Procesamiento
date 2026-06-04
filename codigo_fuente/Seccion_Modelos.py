@@ -213,8 +213,8 @@ def show_modelos():
                                 tmp_glb_path = tmp_glb.name
                             
                             try:
-                                # Convertir STEP a GLB escribiendo al archivo temporal
-                                cascadio.step_to_glb(tmp_path, tmp_glb_path)
+                                # Convertir STEP a GLB escribiendo al archivo temporal con alta resolución (tol_angular=0.05 rad)
+                                cascadio.step_to_glb(tmp_path, tmp_glb_path, tol_linear=0.005, tol_angular=0.05)
                                 
                                 # Cargar con trimesh desde el archivo
                                 mesh = trimesh.load(tmp_glb_path, file_type="glb")
