@@ -225,6 +225,8 @@ def show_modelos():
                                         raise ValueError("El archivo STEP no contiene geometrías válidas.")
                                     mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
                                     
+                                mesh.fix_normals()
+                                    
                                 v_arr = np.array(mesh.vertices, dtype=np.float64)
                                 f_arr = np.array(mesh.faces, dtype=np.int32)
                                 
@@ -266,6 +268,8 @@ def show_modelos():
                                     if len(mesh.geometry) == 0:
                                         raise ValueError("El archivo OBJ no contiene geometrías válidas.")
                                     mesh = trimesh.util.concatenate(list(mesh.geometry.values()))
+                                    
+                                mesh.fix_normals()
                                     
                                 v_arr = np.array(mesh.vertices, dtype=np.float64)
                                 f_arr = np.array(mesh.faces, dtype=np.int32)
