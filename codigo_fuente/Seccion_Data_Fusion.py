@@ -163,7 +163,7 @@ def get_camera_wireframe(C, rvec, tvec, scale=1.0):
     
     return xs, ys, zs
 
-def backward_projection(vertices, faces, images, calibrations):
+def backward_projection(vertices, faces, images, calibrations, mode="Captura de Superficies"):
     """Mapeo de texturas inverso (Backward Projection) optimizado y vectorizado."""
     num_faces = len(faces)
     face_colors = np.full((num_faces, 3), 220, dtype=np.uint8)
@@ -244,6 +244,22 @@ def backward_projection(vertices, faces, images, calibrations):
         
         active_indices = np.where(faces_mask)[0]
         valid_face_indices = active_indices[valid_mask]
+        
+        if mode == "Captura de Oilflow":
+            # Convertir a HSV para filtrar naranja/amarillo fluorescente
+            # Las imágenes cargadas por PIL a numpy están en formato RGB
+            hsv_colors = cv2.cvtColor(sampled_colors.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+            # Rango HSV para naranja/amarillo fluorescente: Hue [5, 45], Sat > 80, Val > 80
+            h = hsv_colors[:, 0]
+            s = hsv_colors[:, 1]
+            v_val = hsv_colors[:, 2]
+            
+            oil_mask = (h >= 5) & (h <= 45) & (s >= 80) & (v_val >= 80)
+            
+            # Filtrar y aplicar solo a los píxeles de oilflow
+            valid_face_indices = valid_face_indices[oil_mask]
+            sampled_colors = sampled_colors[oil_mask]
+            
         face_colors[valid_face_indices] = sampled_colors
         
     return [f"rgb({c[0]},{c[1]},{c[2]})" for c in face_colors]
@@ -667,6 +683,21 @@ def show_data_fusion():
         st.sidebar.success(f"✅ Malla STL Activa: `{model_name}`\nCaras: {len(f_arr)} | Vértices: {len(v)}")
     else:
         st.sidebar.warning("⚠️ Sin malla STL activa en la sección **MODELOS**.")
+
+    # ═══════════════════════════════════════════════════════════════
+    #  MODO DE OPERACION
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("### 🔄 Modo de Data Fusion")
+    if 'df_mode' not in st.session_state:
+        st.session_state.df_mode = "Captura de Superficies"
+        
+    st.session_state.df_mode = st.radio(
+        "Seleccione la modalidad de procesamiento:",
+        ["Captura de Superficies", "Captura de Oilflow"],
+        index=0 if st.session_state.df_mode == "Captura de Superficies" else 1,
+        horizontal=True
+    )
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════
     #  TABS DE SECCIÓN ACTIVAS
@@ -1188,9 +1219,9 @@ def show_data_fusion():
                     v_offsetted[:, 1] += st.session_state.df_offset_y
                     v_offsetted[:, 2] += st.session_state.df_offset_z
                     
-                    colors = backward_projection(v_offsetted, f_arr, images_dict, st.session_state.df_calibrations)
+                    colors = backward_projection(v_offsetted, f_arr, images_dict, st.session_state.df_calibrations, mode=st.session_state.df_mode)
                     st.session_state.df_face_colors = colors
-                    st.success("✅ Texturizado completado con éxito!")
+                    st.success(f"✅ Texturizado completado con éxito en modo {st.session_state.df_mode}!")
                 except Exception as e:
                     st.error(f"Fallo en Backward Projection: {e}")
 
