@@ -258,6 +258,9 @@ else:
         from codigo_fuente.Seccion_Modelos import show_modelos
         show_modelos()
     elif st.session_state.seccion_actual == 'data_fusion':
+        import sys
+        if "codigo_fuente.Seccion_Data_Fusion" in sys.modules:
+            del sys.modules["codigo_fuente.Seccion_Data_Fusion"]
         from codigo_fuente.Seccion_Data_Fusion import show_data_fusion
         show_data_fusion()
     elif st.session_state.seccion_actual == 'herramientas':
@@ -278,3 +281,5 @@ else:
     elif st.session_state.seccion_actual == 'smn_betz':
         from codigo_fuente.Ensayo_SMN_Betz import show_smn_betz
         show_smn_betz()
+   
+ 
