@@ -281,5 +281,4 @@ else:
     elif st.session_state.seccion_actual == 'smn_betz':
         from codigo_fuente.Ensayo_SMN_Betz import show_smn_betz
         show_smn_betz()
-   
- 
+ 
