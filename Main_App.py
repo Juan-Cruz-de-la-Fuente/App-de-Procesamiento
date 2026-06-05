@@ -198,10 +198,13 @@ def render_navbar():
                         st.rerun()
 
             with c_df:
-                if st.button("🎨 DATA FUSION", use_container_width=True, 
-                             type="primary" if st.session_state.seccion_actual == 'data_fusion' else "secondary"):
-                    st.session_state.seccion_actual = 'data_fusion'
-                    st.rerun()
+                with st.popover("🎨 DATA FUSION", use_container_width=True):
+                    if st.button("📸 Captura de Imagen", use_container_width=True):
+                        st.session_state.seccion_actual = 'df_captura_imagen'
+                        st.rerun()
+                    if st.button("🟢 Captura OilFlow", use_container_width=True):
+                        st.session_state.seccion_actual = 'df_captura_oilflow'
+                        st.rerun()
 
             with c3:
                 if st.button("📦 MODELOS", use_container_width=True, 
@@ -257,11 +260,17 @@ else:
     elif st.session_state.seccion_actual == 'modelos':
         from codigo_fuente.Seccion_Modelos import show_modelos
         show_modelos()
-    elif st.session_state.seccion_actual == 'data_fusion':
+    elif st.session_state.seccion_actual == 'df_captura_imagen':
         import sys
-        if "codigo_fuente.Seccion_Data_Fusion" in sys.modules:
-            del sys.modules["codigo_fuente.Seccion_Data_Fusion"]
-        from codigo_fuente.Seccion_Data_Fusion import show_data_fusion
+        if "codigo_fuente.Seccion_Data_Fusion_Captura_Imagen" in sys.modules:
+            del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_Imagen"]
+        from codigo_fuente.Seccion_Data_Fusion_Captura_Imagen import show_data_fusion
+        show_data_fusion()
+    elif st.session_state.seccion_actual == 'df_captura_oilflow':
+        import sys
+        if "codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow" in sys.modules:
+            del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow"]
+        from codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow import show_data_fusion
         show_data_fusion()
     elif st.session_state.seccion_actual == 'herramientas':
         from codigo_fuente.Herramientas import show_herramientas
