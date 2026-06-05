@@ -382,14 +382,23 @@ def show_data_fusion():
     if "df_points_data" not in st.session_state: st.session_state.df_points_data = {}
     if "df_last_clicks" not in st.session_state: st.session_state.df_last_clicks = {}
     if "df_calibrations" not in st.session_state: st.session_state.df_calibrations = {}
-    if "df_camera_profiles" not in st.session_state: st.session_state.df_camera_profiles = {"Cámara A (Principal)": 1.0, "Cámara B (Secundaria)": 1.0}
-    if "df_image_camera_assignments" not in st.session_state: st.session_state.df_image_camera_assignments = {}
+    
+    # NUEVO: Diccionario para las cámaras
+    if "df_cameras" not in st.session_state: 
+        st.session_state.df_cameras = {
+            "Cámara 1": {
+                "K": None, 
+                "dist": None, 
+                "source": "estimada", 
+                "shape": None, 
+                "rms": None,
+                "focal_factor": 1.2
+            }
+        }
+    if "df_active_camera" not in st.session_state:
+        st.session_state.df_active_camera = "Cámara 1"
+
     if "df_object_rotation_angles" not in st.session_state: st.session_state.df_object_rotation_angles = {}
-    if "df_K_matrix" not in st.session_state: st.session_state.df_K_matrix = None
-    if "df_dist_coeffs" not in st.session_state: st.session_state.df_dist_coeffs = None
-    if "df_calibration_rms" not in st.session_state: st.session_state.df_calibration_rms = None
-    if "df_K_source" not in st.session_state: st.session_state.df_K_source = "estimada"
-    if "df_calibration_shape" not in st.session_state: st.session_state.df_calibration_shape = None
     if "df_offset_x" not in st.session_state: st.session_state.df_offset_x = 0.0
     if "df_offset_y" not in st.session_state: st.session_state.df_offset_y = 0.0
     if "df_offset_z" not in st.session_state: st.session_state.df_offset_z = 0.0
@@ -458,27 +467,38 @@ def show_data_fusion():
                                     try:
                                         cfg = json.loads(cfg_bytes.decode('utf-8'))
                                         st.session_state.df_points_data = cfg.get("points_data", {})
-                                        st.session_state.df_camera_profiles = cfg.get("camera_profiles", {})
-                                        st.session_state.df_image_camera_assignments = cfg.get("image_camera_assignments", {})
                                         st.session_state.df_object_rotation_angles = cfg.get("object_rotation_angles", {})
                                         st.session_state.df_offset_x = cfg.get("offset_x", 0.0)
                                         st.session_state.df_offset_y = cfg.get("offset_y", 0.0)
                                         st.session_state.df_offset_z = cfg.get("offset_z", 0.0)
-                                        
-                                        K_list = cfg.get("K_matrix")
-                                        st.session_state.df_K_matrix = np.array(K_list) if K_list is not None else None
-                                        
-                                        dist_list = cfg.get("dist_coeffs")
-                                        st.session_state.df_dist_coeffs = np.array(dist_list) if dist_list is not None else None
-                                        
-                                        st.session_state.df_calibration_rms = cfg.get("calibration_rms")
-                                        st.session_state.df_K_source = cfg.get("K_source", "estimada")
-                                        
-                                        shape_list = cfg.get("calibration_shape")
-                                        st.session_state.df_calibration_shape = tuple(shape_list) if shape_list is not None else None
                                         st.session_state.df_use_ransac = cfg.get("use_ransac", True)
                                         st.session_state.df_stl_units = cfg.get("stl_units", "mm")
                                         
+                                        # Migración a cámaras multicámara
+                                        if "cameras" in cfg:
+                                            # Cargar formato nuevo multicámara
+                                            st.session_state.df_cameras = {}
+                                            for cname, cdata in cfg["cameras"].items():
+                                                st.session_state.df_cameras[cname] = {
+                                                    "K": np.array(cdata["K"]) if cdata.get("K") is not None else None,
+                                                    "dist": np.array(cdata["dist"]) if cdata.get("dist") is not None else None,
+                                                    "source": cdata.get("source", "estimada"),
+                                                    "shape": tuple(cdata["shape"]) if cdata.get("shape") is not None else None,
+                                                    "rms": cdata.get("rms"),
+                                                    "focal_factor": cdata.get("focal_factor", 1.2)
+                                                }
+                                        else:
+                                            # Migrar desde el formato viejo global
+                                            st.session_state.df_cameras = {"Cámara 1": {
+                                                "K": np.array(cfg["K_matrix"]) if cfg.get("K_matrix") else None,
+                                                "dist": np.array(cfg["dist_coeffs"]) if cfg.get("dist_coeffs") else None,
+                                                "source": cfg.get("K_source", "estimada"),
+                                                "shape": tuple(cfg["calibration_shape"]) if cfg.get("calibration_shape") else None,
+                                                "rms": cfg.get("calibration_rms"),
+                                                "focal_factor": 1.2
+                                            }}
+                                            
+                                        # Calibraciones de poses de las cámaras resueltas
                                         cal_data = cfg.get("calibrations", {})
                                         st.session_state.df_calibrations = {}
                                         for cname, cal in cal_data.items():
@@ -491,6 +511,10 @@ def show_data_fusion():
                                                 "roll": cal["roll"],
                                                 "yaw": cal["yaw"]
                                             }
+                                            
+                                        # Lista de asignaciones previas si viene del modelo viejo
+                                        st.session_state._old_assignments = cfg.get("image_camera_assignments", {})
+                                        
                                     except Exception as json_err:
                                         st.error(f"Error parseando project_config.json: {json_err}")
                                         
@@ -502,7 +526,14 @@ def show_data_fusion():
                                     if raw_img:
                                         try:
                                             pil_img, np_arr = load_uploaded_image(raw_img)
-                                            new_images.append({"name": f['name'], "pil": pil_img, "np": np_arr, "raw": raw_img})
+                                            # Asignar cámara. Si viene de proyecto viejo, buscar en _old_assignments
+                                            old_assign = getattr(st.session_state, "_old_assignments", {})
+                                            cam_asignada = old_assign.get(f['name'], "Cámara 1")
+                                            # Buscar si ya se le guardó en new format
+                                            for im in cfg.get("images_meta", []):
+                                                if im["name"] == f['name']:
+                                                    cam_asignada = im.get("camera", cam_asignada)
+                                            new_images.append({"name": f['name'], "pil": pil_img, "np": np_arr, "raw": raw_img, "camera": cam_asignada})
                                         except Exception as img_err:
                                             st.error(f"Error cargando foto {f['name']}: {img_err}")
                                             
@@ -551,20 +582,29 @@ def show_data_fusion():
             
             if c_save.button("💾 GUARDAR CAMBIOS EN GOOGLE DRIVE", use_container_width=True, type="primary"):
                 with st.spinner("Guardando archivos y configuraciones en tu Drive..."):
-                    # Serializar configuraciones
+                    # Serializar configuraciones multicámara
+                    cameras_to_save = {}
+                    for cname, cdata in st.session_state.df_cameras.items():
+                        cameras_to_save[cname] = {
+                            "K": cdata["K"].tolist() if cdata["K"] is not None else None,
+                            "dist": cdata["dist"].tolist() if cdata["dist"] is not None else None,
+                            "source": cdata["source"],
+                            "shape": list(cdata["shape"]) if cdata["shape"] is not None else None,
+                            "rms": cdata["rms"],
+                            "focal_factor": cdata["focal_factor"]
+                        }
+                        
+                    # Metadatos de imágenes
+                    images_meta = [{"name": img["name"], "camera": img.get("camera", "Cámara 1")} for img in st.session_state.df_images]
+
                     cfg_data = {
                         "points_data": st.session_state.df_points_data,
-                        "camera_profiles": st.session_state.df_camera_profiles,
-                        "image_camera_assignments": st.session_state.df_image_camera_assignments,
+                        "cameras": cameras_to_save,
+                        "images_meta": images_meta,
                         "object_rotation_angles": st.session_state.df_object_rotation_angles,
                         "offset_x": st.session_state.df_offset_x,
                         "offset_y": st.session_state.df_offset_y,
                         "offset_z": st.session_state.df_offset_z,
-                        "K_matrix": st.session_state.df_K_matrix.tolist() if st.session_state.df_K_matrix is not None else None,
-                        "dist_coeffs": st.session_state.df_dist_coeffs.tolist() if st.session_state.df_dist_coeffs is not None else None,
-                        "calibration_rms": st.session_state.df_calibration_rms,
-                        "K_source": st.session_state.df_K_source,
-                        "calibration_shape": list(st.session_state.df_calibration_shape) if st.session_state.df_calibration_shape is not None else None,
                         "use_ransac": st.session_state.df_use_ransac,
                         "stl_units": st.session_state.df_stl_units,
                         "calibrations": {}
@@ -651,7 +691,29 @@ def show_data_fusion():
     if sub_page == "📷 0. Parámetros de Cámara":
         st.markdown("<div class='section-card'>", unsafe_allow_html=True)
         st.subheader("📷 Calibración de Lente y Matriz K")
-        st.caption("Especifique los parámetros geométricos del lente para eliminar la distorsión del SolvePnP.")
+        st.caption("Administre múltiples cámaras y especifique los parámetros geométricos del lente.")
+        
+        # --- Selector de Cámara ---
+        st.markdown("#### 🎥 Administrador de Cámaras")
+        c_sel, c_add, c_del = st.columns([3, 2, 1])
+        with c_sel:
+            curr_idx = list(st.session_state.df_cameras.keys()).index(st.session_state.df_active_camera) if st.session_state.df_active_camera in st.session_state.df_cameras else 0
+            st.session_state.df_active_camera = st.selectbox("Seleccionar Cámara Activa:", list(st.session_state.df_cameras.keys()), index=curr_idx)
+        with c_add:
+            new_cam_name = st.text_input("Agregar nueva cámara:", placeholder="Ej: Cámara 2", label_visibility="collapsed")
+            if st.button("➕ Añadir Cámara", use_container_width=True):
+                if new_cam_name and new_cam_name not in st.session_state.df_cameras:
+                    st.session_state.df_cameras[new_cam_name] = {"K": None, "dist": None, "source": "estimada", "shape": None, "rms": None, "focal_factor": 1.2}
+                    st.session_state.df_active_camera = new_cam_name
+                    st.rerun()
+        with c_del:
+            if st.button("🗑️ Eliminar", use_container_width=True) and len(st.session_state.df_cameras) > 1:
+                del st.session_state.df_cameras[st.session_state.df_active_camera]
+                st.session_state.df_active_camera = list(st.session_state.df_cameras.keys())[0]
+                st.rerun()
+                
+        active_cam = st.session_state.df_cameras[st.session_state.df_active_camera]
+        st.markdown("---")
         
         pm = st.session_state.df_pro_mode
         disabled = pm["locked"]
@@ -721,33 +783,33 @@ def show_data_fusion():
                         st.error(f"Fallo al calibrar: solo {found} fotos válidas detectadas. Se requieren al menos 4.")
                     else:
                         rms, K, dist, _, _ = cv2.calibrateCamera(obj_points, img_points, img_shape, None, None)
-                        st.session_state.df_K_matrix = K
-                        st.session_state.df_dist_coeffs = dist
-                        st.session_state.df_calibration_rms = rms
-                        st.session_state.df_K_source = "chessboard"
-                        st.session_state.df_calibration_shape = img_shape
+                        active_cam["K"] = K
+                        active_cam["dist"] = dist
+                        active_cam["rms"] = rms
+                        active_cam["source"] = "chessboard"
+                        active_cam["shape"] = img_shape
                         st.success(f"✅ Calibración finalizada con {found} fotos. RMS: {rms:.4f} px")
                         st.rerun()
 
         # Ingreso manual de K
         st.markdown("---")
-        st.markdown("#### ✏️ Ingreso Manual de Parámetros Intrínsecos")
+        st.markdown(f"#### ✏️ Ingreso Manual de Parámetros Intrínsecos ({st.session_state.df_active_camera})")
         mx_col1, mx_col2, mx_col3, mx_col4 = st.columns(4)
-        m_fx = mx_col1.number_input("fx (focal px horizontal)", value=float(st.session_state.df_K_matrix[0,0]) if st.session_state.df_K_matrix is not None else 3000.0)
-        m_fy = mx_col2.number_input("fy (focal px vertical)", value=float(st.session_state.df_K_matrix[1,1]) if st.session_state.df_K_matrix is not None else 3000.0)
-        m_cx = mx_col3.number_input("cx (centro óptico X)", value=float(st.session_state.df_K_matrix[0,2]) if st.session_state.df_K_matrix is not None else 2016.0)
-        m_cy = mx_col4.number_input("cy (centro óptico Y)", value=float(st.session_state.df_K_matrix[1,2]) if st.session_state.df_K_matrix is not None else 1512.0)
+        m_fx = mx_col1.number_input("fx (focal px horizontal)", value=float(active_cam["K"][0,0]) if active_cam["K"] is not None else 3000.0)
+        m_fy = mx_col2.number_input("fy (focal px vertical)", value=float(active_cam["K"][1,1]) if active_cam["K"] is not None else 3000.0)
+        m_cx = mx_col3.number_input("cx (centro óptico X)", value=float(active_cam["K"][0,2]) if active_cam["K"] is not None else 2016.0)
+        m_cy = mx_col4.number_input("cy (centro óptico Y)", value=float(active_cam["K"][1,2]) if active_cam["K"] is not None else 1512.0)
         
         if st.button("💾 GUARDAR K MANUALMENTE", use_container_width=True):
-            st.session_state.df_K_matrix = np.array([[m_fx, 0, m_cx], [0, m_fy, m_cy], [0, 0, 1]], dtype=np.float64)
-            st.session_state.df_dist_coeffs = np.zeros((4, 1), dtype=np.float64)
-            st.session_state.df_K_source = "manual"
+            active_cam["K"] = np.array([[m_fx, 0, m_cx], [0, m_fy, m_cy], [0, 0, 1]], dtype=np.float64)
+            active_cam["dist"] = np.zeros((4, 1), dtype=np.float64)
+            active_cam["source"] = "manual"
             st.success("✅ Matriz K guardada manualmente.")
             st.rerun()
 
-        if st.session_state.df_K_matrix is not None:
-            st.markdown("##### 📊 Matriz K Actual:")
-            st.markdown(K_matrix_display(st.session_state.df_K_matrix))
+        if active_cam["K"] is not None:
+            st.markdown(f"##### 📊 Matriz K Actual ({st.session_state.df_active_camera}):")
+            st.markdown(K_matrix_display(active_cam["K"]))
             
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -758,7 +820,8 @@ def show_data_fusion():
         st.markdown("<div class='section-card'>", unsafe_allow_html=True)
         st.subheader("📸 Imágenes del Ensayo (Oil Flow / Visualizaciones)")
         
-        uploaded = st.file_uploader("Arrastre sus fotos de ensayo aquí (.png, .jpg, .jpeg):", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+        target_camera = st.selectbox("Asignar imágenes a cargar a la cámara:", list(st.session_state.df_cameras.keys()))
+        uploaded = st.file_uploader(f"Arrastre sus fotos de ensayo para {target_camera} aquí (.png, .jpg, .jpeg):", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
         if uploaded:
             new_imgs = list(st.session_state.df_images)
             for uf in uploaded:
@@ -767,7 +830,7 @@ def show_data_fusion():
                     try:
                         raw = uf.read()
                         pil_img, np_arr = load_uploaded_image(raw)
-                        new_imgs.append({"name": uf.name, "pil": pil_img, "np": np_arr, "raw": raw})
+                        new_imgs.append({"name": uf.name, "pil": pil_img, "np": np_arr, "raw": raw, "camera": target_camera})
                         if uf.name not in st.session_state.df_points_data:
                             st.session_state.df_points_data[uf.name] = []
                     except Exception as e:
@@ -780,7 +843,8 @@ def show_data_fusion():
             st.markdown("##### Fotos actualmente en el proyecto:")
             for idx, img in enumerate(st.session_state.df_images):
                 col_n, col_btn = st.columns([4, 1])
-                col_n.write(f"🖼️ `{img['name']}` ({img['pil'].size[0]}x{img['pil'].size[1]} px)")
+                cam_label = img.get("camera", "Desconocida")
+                col_n.write(f"🖼️ `{img['name']}` ({img['pil'].size[0]}x{img['pil'].size[1]} px) — **{cam_label}**")
                 if col_btn.button("🗑️ Quitar", key=f"del_img_{idx}"):
                     st.session_state.df_images.pop(idx)
                     st.session_state.df_points_data.pop(img['name'], None)
@@ -826,13 +890,15 @@ def show_data_fusion():
         image_name = active_img["name"]
         pil_img = active_img["pil"]
         orig_w, orig_h = pil_img.size
+        active_cam_name = active_img.get("camera", list(st.session_state.df_cameras.keys())[0])
+        cam_conf = st.session_state.df_cameras.get(active_cam_name)
 
         # Aplicar undistort si está calibrado
         is_undistorted = False
-        if st.session_state.df_K_matrix is not None and st.session_state.df_dist_coeffs is not None and st.session_state.df_K_source == "chessboard":
-            scaled_K = get_scaled_K(st.session_state.df_K_matrix, target_shape=(orig_w, orig_h), source_shape=st.session_state.df_calibration_shape)
+        if cam_conf and cam_conf["K"] is not None and cam_conf["dist"] is not None and cam_conf["source"] == "chessboard":
+            scaled_K = get_scaled_K(cam_conf["K"], target_shape=(orig_w, orig_h), source_shape=cam_conf["shape"])
             np_orig = np.array(pil_img)
-            np_disp = cv2.undistort(np_orig, scaled_K, st.session_state.df_dist_coeffs)
+            np_disp = cv2.undistort(np_orig, scaled_K, cam_conf["dist"])
             pil_img_for_display = Image.fromarray(np_disp)
             is_undistorted = True
         else:
@@ -847,7 +913,7 @@ def show_data_fusion():
             scale_factor = 1.0
             pil_display = pil_img_for_display
 
-        st.markdown(f"**Archivo Activo:** `{image_name}` ({orig_w}x{orig_h} px)")
+        st.markdown(f"**Archivo Activo:** `{image_name}` ({orig_w}x{orig_h} px) — **Cámara:** `{active_cam_name}`")
         
         points = st.session_state.df_points_data.get(image_name, [])
         marked_pil = draw_points_on_image(pil_display, points, scale_factor)
@@ -996,19 +1062,13 @@ def show_data_fusion():
 
         # Cámara profiles
         st.markdown("##### Perfiles de factor de longitud focal estimado:")
-        updated = {}
-        for cam_name, current in list(st.session_state.df_camera_profiles.items()):
-            val = st.slider(f"Longitud Focal (Zoom) — {cam_name}", 0.5, 4.0, float(current), 0.05, key=f"df_slider_{cam_name}")
-            updated[cam_name] = val
-        st.session_state.df_camera_profiles = updated
-        
-        # Asignar perfiles
-        st.markdown("##### Asignación de cámara a fotos:")
-        cams = list(st.session_state.df_camera_profiles.keys())
-        for img_name in ready_imgs:
-            curr = st.session_state.df_image_camera_assignments.get(img_name, cams[0])
-            if curr not in cams: curr = cams[0]
-            st.session_state.df_image_camera_assignments[img_name] = st.selectbox(f"`{img_name}`:", cams, index=cams.index(curr), key=f"df_assign_{img_name}")
+        st.caption("Si alguna cámara no tiene matriz K calibrada, se estimará en base a este factor.")
+        for cam_name, cdata in st.session_state.df_cameras.items():
+            if cdata["K"] is None:
+                new_ff = st.slider(f"Longitud Focal (Zoom) — {cam_name}", 0.5, 4.0, float(cdata.get("focal_factor", 1.2)), 0.05, key=f"df_slider_{cam_name}")
+                st.session_state.df_cameras[cam_name]["focal_factor"] = new_ff
+            else:
+                st.success(f"✅ `{cam_name}` tiene matriz K explícita. No requiere estimación de zoom.")
 
         if st.button("🚀 INICIAR CALIBRACIÓN DE CÁMARAS", use_container_width=True, type="primary"):
             with st.spinner("Ejecutando algoritmos SolvePnP robustos..."):
@@ -1025,14 +1085,17 @@ def show_data_fusion():
                     
                     img_pts = np.array([[p["u"], p["v"]] for p in pts], dtype=np.float64)
                     
-                    if st.session_state.df_K_matrix is not None:
-                        K = get_scaled_K(st.session_state.df_K_matrix, target_shape=(W, H), source_shape=st.session_state.df_calibration_shape)
+                    assigned_cam = img_dict.get("camera", list(st.session_state.df_cameras.keys())[0])
+                    cdata = st.session_state.df_cameras.get(assigned_cam)
+                    
+                    if cdata and cdata["K"] is not None:
+                        K = get_scaled_K(cdata["K"], target_shape=(W, H), source_shape=cdata["shape"])
+                        dist = cdata["dist"] if cdata["source"] == "chessboard" else None
                     else:
-                        assigned = st.session_state.df_image_camera_assignments.get(img_name, cams[0])
-                        zoom = st.session_state.df_camera_profiles.get(assigned, 1.2)
+                        zoom = cdata["focal_factor"] if cdata else 1.2
                         K = estimate_camera_matrix(W, H, zoom)
+                        dist = None
                         
-                    dist = st.session_state.df_dist_coeffs if st.session_state.df_K_source == "chessboard" else None
                     rvec, tvec, C, pitch, roll, yaw, success = calibrate_camera(obj_pts, img_pts, K, dist, st.session_state.df_use_ransac)
                     
                     if success:
@@ -1111,10 +1174,13 @@ def show_data_fusion():
                     images_dict = {}
                     for img in st.session_state.df_images:
                         arr = img["np"].copy()
-                        if st.session_state.df_K_matrix is not None and st.session_state.df_dist_coeffs is not None and st.session_state.df_K_source == "chessboard":
+                        assigned_cam = img.get("camera", list(st.session_state.df_cameras.keys())[0])
+                        cdata = st.session_state.df_cameras.get(assigned_cam)
+                        
+                        if cdata and cdata["K"] is not None and cdata["dist"] is not None and cdata["source"] == "chessboard":
                             H, W, _ = arr.shape
-                            scaled_K = get_scaled_K(st.session_state.df_K_matrix, target_shape=(W, H), source_shape=st.session_state.df_calibration_shape)
-                            arr = cv2.undistort(arr, scaled_K, st.session_state.df_dist_coeffs)
+                            scaled_K = get_scaled_K(cdata["K"], target_shape=(W, H), source_shape=cdata["shape"])
+                            arr = cv2.undistort(arr, scaled_K, cdata["dist"])
                         images_dict[img["name"]] = arr
                         
                     v_offsetted = v.copy()
