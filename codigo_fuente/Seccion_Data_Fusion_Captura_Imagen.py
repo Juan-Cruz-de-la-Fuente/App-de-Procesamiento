@@ -997,9 +997,12 @@ def show_data_fusion():
                             
                             def parse_val(val):
                                 try:
-                                    s = str(val).strip()
-                                    if s.count('.') > 1: s = s.replace('.', '')
-                                    return float(s.replace(',', '.'))
+                                    if pd.isna(val): return 0.0
+                                    s = str(val).strip().replace(',', '.')
+                                    if s.count('.') > 1:
+                                        parts = s.split('.')
+                                        s = "".join(parts[:-1]) + "." + parts[-1]
+                                    return float(s)
                                 except:
                                     return 0.0
 

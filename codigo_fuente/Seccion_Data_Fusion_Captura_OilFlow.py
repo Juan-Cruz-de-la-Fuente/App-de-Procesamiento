@@ -998,27 +998,34 @@ def show_data_fusion():
             if uploaded_file is not None:
                 try:
                     if uploaded_file.name.endswith('.csv'):
-                        df_file = pd.read_csv(uploaded_file)
+                        df_file = pd.read_csv(uploaded_file, header=None)
                     else:
-                        df_file = pd.read_excel(uploaded_file)
+                        df_file = pd.read_excel(uploaded_file, header=None)
                         
                     # Validar cantidad de filas vs puntos marcados
                     if len(df_file) < len(points):
                         st.warning(f"⚠️ El archivo tiene {len(df_file)} filas, pero hay {len(points)} puntos marcados. Se importarán solo las filas disponibles.")
                     
                     if st.button("🔄 Importar Coordenadas del Archivo", use_container_width=True, type="primary"):
-                        cols_lower = [str(c).lower().strip() for c in df_file.columns]
-                        
                         for i in range(min(len(points), len(df_file))):
                             row = df_file.iloc[i]
+                            
+                            def parse_val(val):
+                                try:
+                                    if pd.isna(val): return 0.0
+                                    s = str(val).strip().replace(',', '.')
+                                    if s.count('.') > 1:
+                                        parts = s.split('.')
+                                        s = "".join(parts[:-1]) + "." + parts[-1]
+                                    return float(s)
+                                except:
+                                    return 0.0
+
                             if coord_mode == "Cartesiano (X, Y, Z)":
-                                # Buscar X, Y, Z
-                                x_val, y_val, z_val = 0.0, 0.0, 0.0
-                                for col in df_file.columns:
-                                    cl = str(col).lower().strip()
-                                    if cl == 'x': x_val = float(row[col])
-                                    elif cl == 'y': y_val = float(row[col])
-                                    elif cl == 'z': z_val = float(row[col])
+                                x_val = parse_val(row.iloc[0]) if len(row) > 0 else 0.0
+                                y_val = parse_val(row.iloc[1]) if len(row) > 1 else 0.0
+                                z_val = parse_val(row.iloc[2]) if len(row) > 2 else 0.0
+                                
                                 points[i]["X"] = x_val
                                 points[i]["Y"] = y_val
                                 points[i]["Z"] = z_val
@@ -1027,13 +1034,9 @@ def show_data_fusion():
                                 st.session_state[f"df_y_{image_name}_{i}"] = y_val
                                 st.session_state[f"df_z_{image_name}_{i}"] = z_val
                             else:
-                                # Cilíndricas. Buscar Z, Y/R, Theta/Tita/Phi
-                                z_val, r_val, phi_deg = 0.0, 0.0, 0.0
-                                for col in df_file.columns:
-                                    cl = str(col).lower().strip()
-                                    if cl == 'z': z_val = float(row[col])
-                                    elif cl in ['y', 'r']: r_val = float(row[col])
-                                    elif cl in ['theta', 'tita', 'phi', 'φ', '°']: phi_deg = float(row[col])
+                                z_val = parse_val(row.iloc[0]) if len(row) > 0 else 0.0
+                                r_val = parse_val(row.iloc[1]) if len(row) > 1 else 0.0
+                                phi_deg = parse_val(row.iloc[2]) if len(row) > 2 else 0.0
                                 
                                 phi_rad = np.radians(phi_deg)
                                 points[i]["X"] = float(r_val * np.cos(phi_rad))
