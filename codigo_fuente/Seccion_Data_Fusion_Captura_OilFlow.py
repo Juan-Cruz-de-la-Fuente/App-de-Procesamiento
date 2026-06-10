@@ -710,19 +710,33 @@ def show_data_fusion():
         
         # --- Selector de Cámara ---
         st.markdown("#### 🎥 Administrador de Cámaras")
-        c_sel, c_add, c_del = st.columns([3, 2, 1])
+        c_sel, c_ren, c_add, c_del = st.columns([2, 2, 2, 1])
         with c_sel:
             curr_idx = list(st.session_state.df_cameras.keys()).index(st.session_state.df_active_camera) if st.session_state.df_active_camera in st.session_state.df_cameras else 0
             st.session_state.df_active_camera = st.selectbox("Seleccionar Cámara Activa:", list(st.session_state.df_cameras.keys()), index=curr_idx)
+        with c_ren:
+            rename_cam = st.text_input("Renombrar actual:", placeholder="Nuevo nombre", label_visibility="collapsed")
+            if st.button("✏️ Renombrar", use_container_width=True):
+                if rename_cam and rename_cam != st.session_state.df_active_camera and rename_cam not in st.session_state.df_cameras:
+                    old_name = st.session_state.df_active_camera
+                    st.session_state.df_cameras[rename_cam] = st.session_state.df_cameras.pop(old_name)
+                    st.session_state.df_active_camera = rename_cam
+                    # Renombrar en las imágenes ya cargadas
+                    for img in st.session_state.df_images:
+                        if img.get("camera") == old_name:
+                            img["camera"] = rename_cam
+                    st.rerun()
         with c_add:
-            new_cam_name = st.text_input("Agregar nueva cámara:", placeholder="Ej: Cámara 2", label_visibility="collapsed")
+            new_cam_name = st.text_input("Agregar nueva cámara:", placeholder="Ej: Cámara 2", label_visibility="collapsed", key="add_cam_input")
             if st.button("➕ Añadir Cámara", use_container_width=True):
                 if new_cam_name and new_cam_name not in st.session_state.df_cameras:
                     st.session_state.df_cameras[new_cam_name] = {"K": None, "dist": None, "source": "estimada", "shape": None, "rms": None, "focal_factor": 1.2}
                     st.session_state.df_active_camera = new_cam_name
                     st.rerun()
         with c_del:
-            if st.button("🗑️ Eliminar", use_container_width=True) and len(st.session_state.df_cameras) > 1:
+            # Espaciador para alinear el botón de eliminar
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🗑️", help="Eliminar cámara", use_container_width=True) and len(st.session_state.df_cameras) > 1:
                 del st.session_state.df_cameras[st.session_state.df_active_camera]
                 st.session_state.df_active_camera = list(st.session_state.df_cameras.keys())[0]
                 st.rerun()
@@ -920,7 +934,7 @@ def show_data_fusion():
             pil_img_for_display = pil_img
 
         # Resize for display
-        max_width = 900
+        max_width = 1200  # Aumentado para mayor precisión visual (cursor más preciso)
         if orig_w > max_width:
             scale_factor = max_width / orig_w
             pil_display = pil_img_for_display.resize((max_width, int(orig_h * scale_factor)), Image.Resampling.LANCZOS)
@@ -976,6 +990,63 @@ def show_data_fusion():
             st.session_state.df_object_rotation_angles[rot_key] = st.number_input("Ángulo de rotación física del modelo alrededor de Z [grados]:", value=st.session_state.df_object_rotation_angles[rot_key], step=5.0)
             
             coord_mode = st.radio("Sistema de coordenadas de entrada:", ["Cartesiano (X, Y, Z)", "Cilíndrico (Z, R, φ)"], horizontal=True)
+            
+            # Subida de archivo masivo
+            st.markdown("---")
+            st.markdown(f"##### 📥 Importación Masiva (Para {len(points)} puntos actuales)")
+            uploaded_file = st.file_uploader("Cargar archivo con coordenadas (.csv, .xlsx)", type=["csv", "xlsx"])
+            if uploaded_file is not None:
+                try:
+                    if uploaded_file.name.endswith('.csv'):
+                        df_file = pd.read_csv(uploaded_file)
+                    else:
+                        df_file = pd.read_excel(uploaded_file)
+                        
+                    # Validar cantidad de filas vs puntos marcados
+                    if len(df_file) < len(points):
+                        st.warning(f"⚠️ El archivo tiene {len(df_file)} filas, pero hay {len(points)} puntos marcados. Se importarán solo las filas disponibles.")
+                    
+                    if st.button("🔄 Importar Coordenadas del Archivo", use_container_width=True, type="primary"):
+                        cols_lower = [str(c).lower().strip() for c in df_file.columns]
+                        
+                        for i in range(min(len(points), len(df_file))):
+                            row = df_file.iloc[i]
+                            if coord_mode == "Cartesiano (X, Y, Z)":
+                                # Buscar X, Y, Z
+                                x_val, y_val, z_val = 0.0, 0.0, 0.0
+                                for col in df_file.columns:
+                                    cl = str(col).lower().strip()
+                                    if cl == 'x': x_val = float(row[col])
+                                    elif cl == 'y': y_val = float(row[col])
+                                    elif cl == 'z': z_val = float(row[col])
+                                points[i]["X"] = x_val
+                                points[i]["Y"] = y_val
+                                points[i]["Z"] = z_val
+                                # Actualizar sesión para evitar superposición manual (widgets)
+                                st.session_state[f"df_x_{image_name}_{i}"] = x_val
+                                st.session_state[f"df_y_{image_name}_{i}"] = y_val
+                                st.session_state[f"df_z_{image_name}_{i}"] = z_val
+                            else:
+                                # Cilíndricas. Buscar Z, Y/R, Theta/Tita/Phi
+                                z_val, r_val, phi_deg = 0.0, 0.0, 0.0
+                                for col in df_file.columns:
+                                    cl = str(col).lower().strip()
+                                    if cl == 'z': z_val = float(row[col])
+                                    elif cl in ['y', 'r']: r_val = float(row[col])
+                                    elif cl in ['theta', 'tita', 'phi', 'φ', '°']: phi_deg = float(row[col])
+                                
+                                phi_rad = np.radians(phi_deg)
+                                points[i]["X"] = float(r_val * np.cos(phi_rad))
+                                points[i]["Y"] = float(r_val * np.sin(phi_rad))
+                                points[i]["Z"] = z_val
+                                st.session_state[f"df_cz_{image_name}_{i}"] = z_val
+                                st.session_state[f"df_cr_{image_name}_{i}"] = r_val
+                                st.session_state[f"df_cphi_{image_name}_{i}"] = phi_deg
+                        st.success("✅ Coordenadas importadas con éxito.")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error procesando archivo: {e}")
+            st.markdown("---")
             
             st.markdown("Ingrese los valores físicos de coordenadas (se guardan y auto-relacionan automáticamente al instante):")
             
