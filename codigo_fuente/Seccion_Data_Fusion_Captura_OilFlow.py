@@ -179,88 +179,75 @@ def backward_projection(vertices, faces, images, calibrations):
     face_normals = compute_face_normals(vertices, faces)
     
     camera_names = list(calibrations.keys())
-    num_faces = len(faces)
-    
     best_dot = np.full(num_faces, -np.inf)
-    best_cam_idx = np.full(num_faces, -1, dtype=np.int32)
     
-    for idx, cam_name in enumerate(camera_names):
+    for cam_name in camera_names:
+        if cam_name not in images:
+            continue
+            
         cal = calibrations[cam_name]
+        img = images[cam_name]
+        H, W, _ = img.shape
+        
         rvec = cal['rvec']
         tvec = cal['tvec']
+        K = cal['K']
+        
         R, _ = cv2.Rodrigues(rvec)
         C = -R.T @ tvec
         
+        # Cálculo de ángulo de visión (Dot product)
         vec_to_cam = C.flatten() - centroids
         vec_norms = np.linalg.norm(vec_to_cam, axis=1, keepdims=True)
         vec_norms = np.where(vec_norms == 0, 1.0, vec_norms)
         dir_to_cam = vec_to_cam / vec_norms
-        
         dots = np.sum(face_normals * dir_to_cam, axis=1)
         
-        is_better = dots > best_dot
-        best_dot = np.where(is_better, dots, best_dot)
-        best_cam_idx = np.where(is_better, idx, best_cam_idx)
-        
-    for idx, cam_name in enumerate(camera_names):
-        faces_mask = (best_cam_idx == idx) & (best_dot > 0.05)
-        if not np.any(faces_mask):
-            continue
-            
-        cal = calibrations[cam_name]
-        rvec = cal['rvec']
-        tvec = cal['tvec']
-        K = cal['K']
-        img = images[cam_name]
-        H, W, _ = img.shape
-        
-        R, _ = cv2.Rodrigues(rvec)
-        active_centroids = centroids[faces_mask]
-        
-        pts_cam = R @ active_centroids.T + tvec.reshape(3, 1)
+        # Cálculo de proyección 2D (U, V)
+        pts_cam = R @ centroids.T + tvec.reshape(3, 1)
         xc = pts_cam[0, :]
         yc = pts_cam[1, :]
         zc = pts_cam[2, :]
         
         valid_z = zc > 0.001
-        if not np.any(valid_z):
-            continue
-            
+        
         fx, fy = K[0, 0], K[1, 1]
         cx, cy = K[0, 2], K[1, 2]
         
-        u = fx * (xc / zc) + cx
-        v = fy * (yc / zc) + cy
+        zc_safe = np.where(valid_z, zc, 1.0)
+        u = fx * (xc / zc_safe) + cx
+        v = fy * (yc / zc_safe) + cy
         
         valid_uv = (u >= 0) & (u < W - 1) & (v >= 0) & (v < H - 1)
-        valid_mask = valid_z & valid_uv
         
-        if not np.any(valid_mask):
-            continue
+        # Filtro de caras válidas: visibles (Z>0), dentro de imagen (UV), orientadas a la cámara (dot > 0.05)
+        valid_mask = valid_z & valid_uv & (dots > 0.05)
+        
+        # Es mejor solo si es válida y su ángulo es más perpendicular (dot mayor)
+        is_better = valid_mask & (dots > best_dot)
+        
+        # Actualizar colores y mapa de prioridades donde is_better es True
+        if np.any(is_better):
+            cols = u[is_better].astype(np.int32)
+            rows = v[is_better].astype(np.int32)
+            sampled_colors = img[rows, cols]
             
-        cols = u[valid_mask].astype(np.int32)
-        rows = v[valid_mask].astype(np.int32)
-        sampled_colors = img[rows, cols]
-        
-        active_indices = np.where(faces_mask)[0]
-        valid_face_indices = active_indices[valid_mask]
-        
-        # Convertir a HSV para filtrar naranja/amarillo fluorescente
-        # Las imágenes cargadas por PIL a numpy están en formato RGB
-        hsv_colors = cv2.cvtColor(sampled_colors.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
-        # Rango HSV para naranja/amarillo fluorescente: Hue [5, 45], Sat > 80, Val > 80
-        h = hsv_colors[:, 0]
-        s = hsv_colors[:, 1]
-        v_val = hsv_colors[:, 2]
-        
-        oil_mask = (h >= 5) & (h <= 45) & (s >= 80) & (v_val >= 80)
-        
-        # Filtrar y aplicar solo a los píxeles de oilflow
-        valid_face_indices = valid_face_indices[oil_mask]
-        sampled_colors = sampled_colors[oil_mask]
+            # (OilFlow) Convertir a HSV para filtrar naranja/amarillo fluorescente
+            hsv_colors = cv2.cvtColor(sampled_colors.reshape(1, -1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+            h = hsv_colors[:, 0]
+            s = hsv_colors[:, 1]
+            v_val = hsv_colors[:, 2]
             
-        face_colors[valid_face_indices] = sampled_colors
-        
+            # Rango HSV para naranja/amarillo fluorescente: Hue [5, 45], Sat > 80, Val > 80
+            oil_mask = (h >= 5) & (h <= 45) & (s >= 80) & (v_val >= 80)
+            
+            # Aplicamos actualización SOLO a los que tienen fluorescente
+            final_better_indices = np.where(is_better)[0]
+            final_indices = final_better_indices[oil_mask]
+            
+            best_dot[final_indices] = dots[final_indices]
+            face_colors[final_indices] = sampled_colors[oil_mask]
+            
     return [f"rgb({c[0]},{c[1]},{c[2]})" for c in face_colors]
 
 def load_uploaded_image(file_bytes):
