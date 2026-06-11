@@ -1197,7 +1197,13 @@ def show_data_fusion():
         # Mostrar tabla de resultados y visualización 3D
         if st.session_state.df_calibrations:
             st.markdown("---")
-            st.markdown("#### 🔭 Posición y Ángulos Calculados:")
+            c_title, c_clear = st.columns([4, 1])
+            c_title.markdown("#### 🔭 Posición y Ángulos Calculados:")
+            if c_clear.button("🗑️ Borrar Calibraciones", use_container_width=True):
+                st.session_state.df_calibrations.clear()
+                st.session_state.df_face_colors = None
+                st.rerun()
+                
             rows = []
             units = st.session_state.df_stl_units
             for name, cal in st.session_state.df_calibrations.items():
