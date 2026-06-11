@@ -317,6 +317,12 @@ def get_datafusion_projects(username):
     return results.get('files', [])
 
 
+def update_df_point_uv(image_name, idx, axis):
+    val_key = f"df_{axis}_{image_name}_{idx}"
+    if val_key in st.session_state:
+        pt = st.session_state.df_points_data[image_name][idx]
+        pt[axis] = float(st.session_state[val_key])
+
 def update_df_point_cartesian(image_name, idx, coord, snap_active, vertices):
     val_key = f"df_{coord.lower()}_{image_name}_{idx}"
     if val_key in st.session_state:
@@ -932,36 +938,13 @@ def show_data_fusion():
         points = st.session_state.df_points_data.get(image_name, [])
         marked_pil = draw_points_on_image(pil_display, points, scale_factor)
 
-        import plotly.express as px
-
-        fig = px.imshow(marked_pil)
-        fig.update_layout(
-            coloraxis_showscale=False,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            hovermode=False,
-            dragmode=False,
-            clickmode="event+select"
-        )
-        fig.update_traces(hoverinfo='none', hovertemplate=None)
+        from streamlit_image_coordinates import streamlit_image_coordinates
         
-        event = st.plotly_chart(
-            fig,
-            key=f"coords_df_clicker_{image_name}",
-            on_select="rerun",
-            selection_mode="points",
-            use_container_width=True
+        # Coordinate selection widget with stable key to prevent iframe unmounting/freezing
+        value = streamlit_image_coordinates(
+            marked_pil, 
+            key=f"coords_df_clicker_{image_name}"
         )
-        
-        value = None
-        if event and getattr(event, "selection", None) and getattr(event.selection, "get", lambda k: event.selection[k])("points"):
-            pts = getattr(event.selection, "get", lambda k: event.selection[k])("points")
-            if len(pts) > 0:
-                pt = pts[0]
-                if "x" in pt and "y" in pt:
-                    value = {"x": pt["x"], "y": pt["y"]}
-
         if value is not None:
             click_xy = (value["x"], value["y"])
             last_xy = st.session_state.df_last_clicks.get(image_name)
@@ -1080,8 +1063,16 @@ def show_data_fusion():
             for i, pt in enumerate(points):
                 cols = st.columns([1, 1, 1, 2, 2, 2])
                 cols[0].write(f"P{i+1}")
-                cols[1].write(f"{int(pt['u'])}")
-                cols[2].write(f"{int(pt['v'])}")
+                cols[1].number_input(
+                    "U", value=float(pt["u"]), step=1.0, 
+                    key=f"df_u_{image_name}_{i}", label_visibility="collapsed",
+                    on_change=update_df_point_uv, args=(image_name, i, 'u')
+                )
+                cols[2].number_input(
+                    "V", value=float(pt["v"]), step=1.0, 
+                    key=f"df_v_{image_name}_{i}", label_visibility="collapsed",
+                    on_change=update_df_point_uv, args=(image_name, i, 'v')
+                )
                 
                 if coord_mode == "Cartesiano (X, Y, Z)":
                     cols[3].number_input(
