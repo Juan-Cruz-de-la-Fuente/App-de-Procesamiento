@@ -932,11 +932,36 @@ def show_data_fusion():
         points = st.session_state.df_points_data.get(image_name, [])
         marked_pil = draw_points_on_image(pil_display, points, scale_factor)
 
-        # Coordinate selection widget with stable key to prevent iframe unmounting/freezing
-        value = streamlit_image_coordinates(
-            marked_pil, 
-            key=f"coords_df_clicker_{image_name}"
+        import plotly.express as px
+
+        fig = px.imshow(marked_pil)
+        fig.update_layout(
+            coloraxis_showscale=False,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            hovermode=False,
+            dragmode=False,
+            clickmode="event+select"
         )
+        fig.update_traces(hoverinfo='none', hovertemplate=None)
+        
+        event = st.plotly_chart(
+            fig,
+            key=f"coords_df_clicker_{image_name}",
+            on_select="rerun",
+            selection_mode="points",
+            use_container_width=True
+        )
+        
+        value = None
+        if event and getattr(event, "selection", None) and getattr(event.selection, "get", lambda k: event.selection[k])("points"):
+            pts = getattr(event.selection, "get", lambda k: event.selection[k])("points")
+            if len(pts) > 0:
+                pt = pts[0]
+                if "x" in pt and "y" in pt:
+                    value = {"x": pt["x"], "y": pt["y"]}
+
         if value is not None:
             click_xy = (value["x"], value["y"])
             last_xy = st.session_state.df_last_clicks.get(image_name)
