@@ -1,6 +1,5 @@
 # Streamlit
-.streamlit/
-secrets.toml
+.streamlit/secrets.toml
 
 # API Keys & Tokens
 identificaciones_api/
