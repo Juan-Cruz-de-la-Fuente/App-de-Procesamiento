@@ -1047,7 +1047,7 @@ def show_data_fusion():
             st.markdown("Ingrese los valores físicos de coordenadas (se guardan y auto-relacionan automáticamente al instante):")
             
             # Encabezado de la tabla de coordenadas
-            hcols = st.columns([1, 1, 1, 2, 2, 2])
+            hcols = st.columns([0.8, 1, 1, 2, 2, 2, 0.8])
             hcols[0].markdown("**Pto**")
             hcols[1].markdown("**Pix U**")
             hcols[2].markdown("**Pix V**")
@@ -1061,18 +1061,10 @@ def show_data_fusion():
                 hcols[5].markdown("**φ [°]**")
 
             for i, pt in enumerate(points):
-                cols = st.columns([1, 1, 1, 2, 2, 2])
+                cols = st.columns([0.8, 1, 1, 2, 2, 2, 0.8])
                 cols[0].write(f"P{i+1}")
-                cols[1].number_input(
-                    "U", value=float(pt["u"]), step=1.0, 
-                    key=f"df_u_{image_name}_{i}", label_visibility="collapsed",
-                    on_change=update_df_point_uv, args=(image_name, i, 'u')
-                )
-                cols[2].number_input(
-                    "V", value=float(pt["v"]), step=1.0, 
-                    key=f"df_v_{image_name}_{i}", label_visibility="collapsed",
-                    on_change=update_df_point_uv, args=(image_name, i, 'v')
-                )
+                cols[1].write(f"{int(pt['u'])}")
+                cols[2].write(f"{int(pt['v'])}")
                 
                 if coord_mode == "Cartesiano (X, Y, Z)":
                     cols[3].number_input(
@@ -1108,6 +1100,10 @@ def show_data_fusion():
                         key=f"df_cphi_{image_name}_{i}", label_visibility="collapsed",
                         on_change=update_df_point_cylindrical, args=(image_name, i, 'phi', snap_active, v)
                     )
+                
+                if cols[6].button("🗑️", key=f"del_pt_{image_name}_{i}"):
+                    st.session_state.df_points_data[image_name].pop(i)
+                    st.rerun()
             
             # Botón de Snapping manual para conveniencia
             if snap_active and v is not None:
