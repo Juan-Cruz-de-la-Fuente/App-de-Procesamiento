@@ -238,8 +238,8 @@ def backward_projection(vertices, faces, images, calibrations):
             s = hsv_colors[:, 1]
             v_val = hsv_colors[:, 2]
             
-            # Rango HSV para naranja/amarillo fluorescente: Hue [5, 45], Sat > 80, Val > 80
-            oil_mask = (h >= 5) & (h <= 45) & (s >= 80) & (v_val >= 80)
+            # Rango HSV para naranja/amarillo fluorescente ampliado: Hue [0, 55], Sat > 50, Val > 50
+            oil_mask = (h >= 0) & (h <= 55) & (s >= 50) & (v_val >= 50)
             
             # Aplicamos actualización SOLO a los que tienen fluorescente
             final_better_indices = np.where(is_better)[0]
