@@ -202,8 +202,11 @@ def render_navbar():
                     if st.button("📸 Captura de Imagen", use_container_width=True):
                         st.session_state.seccion_actual = 'df_captura_imagen'
                         st.rerun()
-                    if st.button("🟢 Captura OilFlow", use_container_width=True):
-                        st.session_state.seccion_actual = 'df_captura_oilflow'
+                    if st.button("🟢 OilFlow (Foto)", use_container_width=True):
+                        st.session_state.seccion_actual = 'df_captura_oilflow_foto'
+                        st.rerun()
+                    if st.button("🎬 OilFlow (Video)", use_container_width=True):
+                        st.session_state.seccion_actual = 'df_captura_oilflow_video'
                         st.rerun()
 
             with c3:
@@ -266,11 +269,17 @@ else:
             del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_Imagen"]
         from codigo_fuente.Seccion_Data_Fusion_Captura_Imagen import show_data_fusion
         show_data_fusion()
-    elif st.session_state.seccion_actual == 'df_captura_oilflow':
+    elif st.session_state.seccion_actual == 'df_captura_oilflow_foto':
         import sys
-        if "codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow" in sys.modules:
-            del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow"]
-        from codigo_fuente.Seccion_Data_Fusion_Captura_OilFlow import show_data_fusion
+        if "codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Foto" in sys.modules:
+            del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Foto"]
+        from codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Foto import show_data_fusion
+        show_data_fusion()
+    elif st.session_state.seccion_actual == 'df_captura_oilflow_video':
+        import sys
+        if "codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Video" in sys.modules:
+            del sys.modules["codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Video"]
+        from codigo_fuente.Seccion_Data_Fusion_Captura_Oilflow_Video import show_data_fusion
         show_data_fusion()
     elif st.session_state.seccion_actual == 'herramientas':
         from codigo_fuente.Herramientas import show_herramientas
