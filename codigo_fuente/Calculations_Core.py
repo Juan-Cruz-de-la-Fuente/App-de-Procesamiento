@@ -376,6 +376,9 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
     posicion_inicial = configuracion.get('distancia_toma_12', 0)
     orden = configuracion.get('orden', 'asc')
     
+    # Llevar el sistema de referencia para empezar en 0 (Z_ref = 0 en el punto base)
+    z_origin_shift = -posicion_inicial if posicion_inicial < 0 else 0
+    
     z_map = {}
     sensor_cols = [c for c in datos_tiempo.columns if re.search(r'(?i)presion[-_ ]*sensor', str(c))]
     
@@ -395,9 +398,9 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
             if sensor_num is None: continue
             
             if orden == "asc":
-                z_total = z_base_ref + posicion_inicial + (sensor_num - 1) * distancia_entre_tomas
+                z_total = z_base_ref + posicion_inicial + z_origin_shift + (sensor_num - 1) * distancia_entre_tomas
             else:
-                z_total = z_base_ref + posicion_inicial + (12 - sensor_num) * distancia_entre_tomas
+                z_total = z_base_ref + posicion_inicial + z_origin_shift + (12 - sensor_num) * distancia_entre_tomas
                 
             presion = fila.get(col, None)
             if pd.isna(presion): continue

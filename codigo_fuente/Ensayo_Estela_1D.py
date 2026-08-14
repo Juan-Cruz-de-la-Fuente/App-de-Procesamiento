@@ -337,11 +337,33 @@ def show_1d():
         st.plotly_chart(fig, use_container_width=True)
         
         if len(trazas_creadas) >= 2:
-            st.markdown("### 📊 Comparativa de Áreas")
-            t1 = trazas_creadas[0]
-            t2 = trazas_creadas[1]
-            fig_diff, area = crear_grafico_diferencia_areas(t1['sub'], t2['sub'], conf_vis)
+            st.markdown("---")
+            st.markdown("### 📊 Comparativa de Áreas entre Secciones Seleccionadas")
+            nombres_trazas = [t['nombre'] for t in trazas_creadas]
+            c1, c2 = st.columns(2)
+            sel_a = c1.selectbox("Seleccionar Sección / Curva A:", nombres_trazas, index=0, key="area_sel_a_1d")
+            sel_b = c2.selectbox("Seleccionar Sección / Curva B:", nombres_trazas, index=1 if len(nombres_trazas) > 1 else 0, key="area_sel_b_1d")
+            
+            t1 = next((t for t in trazas_creadas if t['nombre'] == sel_a), trazas_creadas[0])
+            t2 = next((t for t in trazas_creadas if t['nombre'] == sel_b), trazas_creadas[1])
+            
+            y_target_a = None
+            y_target_b = None
+            try:
+                if sel_a.startswith("Y = "):
+                    y_target_a = float(sel_a.split()[2])
+            except: pass
+            try:
+                if sel_b.startswith("Y = "):
+                    y_target_b = float(sel_b.split()[2])
+            except: pass
+
+            fig_diff, area = crear_grafico_diferencia_areas(
+                t1['sub'], t2['sub'], conf_vis, 
+                y_filtro_a=y_target_a, y_filtro_b=y_target_b,
+                label_a=sel_a, label_b=sel_b
+            )
             if fig_diff:
                 st.plotly_chart(fig_diff, use_container_width=True)
-                st.metric("Diferencia de Área (A-B)", f"{area:.4f}")
+                st.metric(f"Diferencia de Área (|{sel_a} - {sel_b}|)", f"{area:.4f} Pa·mm")
 
