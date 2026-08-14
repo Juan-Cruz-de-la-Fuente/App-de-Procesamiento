@@ -123,24 +123,41 @@ def show_1d():
             st.success(f"✅ {len(st.session_state.datos_procesados_1d)} archivos en memoria.")
 
         st.markdown("#### 🚀 Subir a Drive (1D)")
-        opciones_1d = list(st.session_state.sub_archivos_1d_memoria.keys()) if st.session_state.sub_archivos_1d_memoria else ["No hay archivos"]
-        sel_save = st.selectbox("Seleccionar sub-archivo:", opciones_1d)
-        
-        nombre_base_1d = "archivo_1d.csv"
-        if st.session_state.sub_archivos_1d_memoria and sel_save in st.session_state.sub_archivos_1d_memoria:
-            sub = st.session_state.sub_archivos_1d_memoria[sel_save]
-            nombre_base_1d = sub.get('nombre_archivo', f"{sel_save}.csv")
+        opciones_1d = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()] + list(st.session_state.sub_archivos_1d_memoria.keys())
+        if not opciones_1d:
+            opciones_1d = ["No hay archivos cargados"]
             
-        nombre_final_1d = st.text_input("Nombre del archivo a guardar:", value=nombre_base_1d)
+        sel_save = st.selectbox("Seleccionar Archivo para guardar:", opciones_1d)
         
-        if st.button("🚀 SUBIR A DRIVE", use_container_width=True, type="primary", disabled=not st.session_state.sub_archivos_1d_memoria):
-            if st.session_state.sub_archivos_1d_memoria and sel_save in st.session_state.sub_archivos_1d_memoria:
+        tiempos = [0]
+        df_target = None
+        if st.session_state.datos_procesados_1d or st.session_state.sub_archivos_1d_memoria:
+            if sel_save.startswith("[Archivo Completo] "):
+                real_k = sel_save.replace("[Archivo Completo] ", "")
+                df_target = st.session_state.datos_procesados_1d.get(real_k)
+            elif sel_save in st.session_state.sub_archivos_1d_memoria:
                 sub = st.session_state.sub_archivos_1d_memoria[sel_save]
-                csv_b = sub['datos'].to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
+                df_target = sub['datos']
+
+            if df_target is not None and 'Tiempo_s' in df_target.columns:
+                tiempos = sorted(df_target['Tiempo_s'].dropna().unique())
+                
+        t_sel = st.selectbox("Tiempo [s]:", tiempos, key="t_sel_save_1d")
+        
+        c1, c2 = st.columns(2)
+        x_pos = c1.number_input("Posición X [mm]:", value=0.0, key="x_pos_1d_save")
+        aoa = c2.number_input("AOA [°]:", value=0.0, key="aoa_1d_save")
+        
+        nombre_auto_1d = f"1D-X{int(x_pos)}-OAO{str(aoa).replace('-','neg')}-T{int(t_sel)}s.csv"
+        nombre_final_1d = st.text_input("Nombre del archivo a guardar:", value=nombre_auto_1d, key="nombre_final_1d_save")
+        
+        if st.button("🚀 SUBIR COMPLETO A DRIVE (1D)", use_container_width=True, type="primary", disabled=df_target is None):
+            if df_target is not None:
+                csv_b = df_target.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
                 if auth.save_csv_1d(st.session_state.username, nombre_final_1d, csv_b):
-                    st.success(f"✅ Guardado: {nombre_final_1d}")
+                    st.success(f"✅ Archivo completo guardado en Drive: {nombre_final_1d}")
                 else:
-                    st.error("Error al guardar.")
+                    st.error("Error al guardar en Drive.")
 
     st.markdown("---")
 
