@@ -260,8 +260,8 @@ def show_1d():
     if has_pos_y:
         col_y1, col_y2 = st.columns([1, 1])
         with col_y1:
-            opciones_y = ["Todas las Secciones Y"] + [f"Y = {_format_y_val(y)}" for y in y_secciones_disponibles]
-            sel_y_seccion = st.selectbox("🎯 Filtrar por Sección Y (Plano XY):", opciones_y, key="sel_y_seccion_1d")
+            opciones_y = [f"Y = {_format_y_val(y)}" for y in y_secciones_disponibles]
+            sel_y_secciones = st.multiselect("🎯 Seleccionar Secciones Y a Visualizar (Plano XY):", opciones_y, default=opciones_y, key="sel_y_secciones_1d")
     else:
         # Fallback por mediciones/filas si Pos_Y_Traverser no diferenció distintas secciones
         if st.session_state.perfiles_seleccionados_1d:
@@ -276,8 +276,8 @@ def show_1d():
 
             col_y1, col_y2 = st.columns([1, 1])
             with col_y1:
-                opts_f = ["Todas las Mediciones / Filas"] + [f['label'] for f in filas_opciones]
-                sel_y_seccion = st.selectbox("🎯 Filtrar por Medición / Sección Y (Plano XY):", opts_f, key="sel_y_seccion_1d_fallback")
+                opts_f = [f['label'] for f in filas_opciones]
+                sel_y_secciones = st.multiselect("🎯 Seleccionar Medición / Sección Y a Visualizar:", opts_f, default=opts_f, key="sel_y_secciones_1d_fallback")
 
     st.markdown("---")
 
@@ -292,33 +292,25 @@ def show_1d():
         num_perfiles = len(st.session_state.perfiles_seleccionados_1d)
 
         if has_pos_y:
-            y_target = None
-            if sel_y_seccion != "Todas las Secciones Y":
-                try:
-                    y_target = float(sel_y_seccion.replace("Y = ", "").strip())
-                except:
-                    y_target = None
+            y_targets_selected = []
+            if sel_y_secciones:
+                for item in sel_y_secciones:
+                    try:
+                        v = float(item.replace("Y = ", "").strip())
+                        y_targets_selected.append(v)
+                    except:
+                        pass
 
             for perf in st.session_state.perfiles_seleccionados_1d:
                 df_perf = perf['datos']
-                y_vals_in_perf = df_perf['Pos_Y_Traverser'].dropna().unique() if 'Pos_Y_Traverser' in df_perf.columns else [None]
-                
-                if y_target is not None:
-                    z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_target)
+                for y_val in y_targets_selected:
+                    z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_val)
                     if z and p:
-                        label_trace = f"Y = {_format_y_val(y_target)}"
+                        label_trace = f"Y = {_format_y_val(y_val)}"
                         if num_perfiles > 1:
                             label_trace += f" ({perf['nombre']})"
                         fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
                         trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
-                else:
-                    for y_val in y_vals_in_perf:
-                        z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_val)
-                        if z and p:
-                            tag_y = f"Y = {_format_y_val(y_val)}" if y_val is not None else perf['nombre']
-                            label_trace = tag_y if num_perfiles == 1 else f"{tag_y} ({perf['nombre']})"
-                            fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
-                            trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
         else:
             for perf in st.session_state.perfiles_seleccionados_1d:
                 df_perf = perf['datos']
@@ -327,7 +319,7 @@ def show_1d():
                     sub_label = f"Y = {_format_y_val(row_y)}"
                     if num_perfiles > 1:
                         sub_label += f" ({perf['nombre']})"
-                    if sel_y_seccion == "Todas las Mediciones / Filas" or sel_y_seccion == sub_label:
+                    if sel_y_secciones and sub_label in sel_y_secciones:
                         z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, fila_index=i_row)
                         if z and p:
                             fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=sub_label))
