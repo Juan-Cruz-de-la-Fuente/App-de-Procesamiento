@@ -75,34 +75,50 @@ def extraer_tiempo_y_coordenadas_YZ(nombre_archivo):
         if tiempo_match:
             tiempo = int(tiempo_match.group(1))
 
-    # 2. Extracción de Z Base (Z o Pos_Z)
+    # 2. Búsqueda de X (Posición Y traverser en el túnel) y Y (Altura Z base en el túnel)
+    x_match = re.search(r"(?:[Xx]|Pos[_\-]?X)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
+    y_match = re.search(r"(?:[Yy]|Pos[_\-]?Y)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
     z_match = re.search(r"(?:[Zz]|Pos[_\-]?Z)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
-    if z_match:
-        try:
-            z_base = float(z_match.group(1).replace(',', '.'))
-        except:
-            pass
 
-    # 3. Extracción de Y Traverser (Y o Pos_Y)
-    y_explicit_match = re.search(r"(?:[Yy]|Pos[_\-]?Y)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
-    if y_explicit_match:
+    if x_match and y_match:
+        # Formato clásico de archivo crudo del túnel (XY_SapySync_X_100_Y_220_...):
+        # X es la posición Y del traverser; Y es la altura Z base
         try:
-            y_traverser = float(y_explicit_match.group(1).replace(',', '.'))
+            y_traverser = float(x_match.group(1).replace(',', '.'))
         except:
-            pass
-
-    # 4. Convención alternativa: X para Traverser Y, Y para Z Base
-    x_match = re.search(r"[Xx][_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext)
-    if x_match:
+            y_traverser = None
+        try:
+            z_base = float(y_match.group(1).replace(',', '.'))
+        except:
+            z_base = None
+    elif x_match:
         try:
             y_traverser = float(x_match.group(1).replace(',', '.'))
         except:
             pass
-        if z_base is None and y_explicit_match:
+        if z_match:
             try:
-                z_base = float(y_explicit_match.group(1).replace(',', '.'))
+                z_base = float(z_match.group(1).replace(',', '.'))
             except:
                 pass
+    elif y_match:
+        if z_match:
+            try:
+                y_traverser = float(y_match.group(1).replace(',', '.'))
+                z_base = float(z_match.group(1).replace(',', '.'))
+            except:
+                pass
+        else:
+            try:
+                y_traverser = float(y_match.group(1).replace(',', '.'))
+            except:
+                pass
+
+    if z_match and z_base is None:
+        try:
+            z_base = float(z_match.group(1).replace(',', '.'))
+        except:
+            pass
 
     return tiempo, y_traverser, z_base
 
