@@ -146,9 +146,33 @@ def show_1d():
 
     # --- PASO 2 (Sin Expander) ---
     st.markdown("### 📥 PASO 2: Selección de Perfiles para Análisis")
-    modo_carga = st.radio("Cargar perfiles desde:", ["🗄️ Base de Datos (Drive)", "🧠 Memoria de Sesión"], horizontal=True, key="modo_carga_1d")
+    modo_carga = st.radio("Cargar perfiles desde:", ["🧠 Memoria de Sesión", "🗄️ Base de Datos (Drive)"], horizontal=True, key="modo_carga_1d")
     
-    if modo_carga == "🗄️ Base de Datos (Drive)":
+    if modo_carga == "🧠 Memoria de Sesión":
+        opciones_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()] + list(st.session_state.sub_archivos_1d_memoria.keys())
+        if not opciones_mem:
+            st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
+        else:
+            default_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()]
+            sel_labels_mem = st.multiselect("Seleccionar Perfiles de Memoria de Sesión:", opciones_mem, default=default_mem if default_mem else None, key="sel_perfiles_1d_mem_ui")
+            
+            if 'last_sel_perfiles_1d_mem' not in st.session_state:
+                st.session_state.last_sel_perfiles_1d_mem = []
+                
+            if sel_labels_mem != st.session_state.last_sel_perfiles_1d_mem:
+                st.session_state.perfiles_seleccionados_1d = []
+                for label in sel_labels_mem:
+                    if label.startswith("[Archivo Completo] "):
+                        real_k = label.replace("[Archivo Completo] ", "")
+                        df = st.session_state.datos_procesados_1d[real_k].copy()
+                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
+                    elif label in st.session_state.sub_archivos_1d_memoria:
+                        sub = st.session_state.sub_archivos_1d_memoria[label]
+                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': sub['datos'].copy()})
+                st.session_state.last_sel_perfiles_1d_mem = sel_labels_mem
+                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Memoria.")
+                st.rerun()
+    else:
         try:
             files_drv = auth.get_user_files_1d(st.session_state.username)
         except:
@@ -184,29 +208,6 @@ def show_1d():
                             st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
                     st.session_state.last_sel_perfiles_1d = sel_labels
                 st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Drive.")
-                st.rerun()
-    else:
-        opciones_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()] + list(st.session_state.sub_archivos_1d_memoria.keys())
-        if not opciones_mem:
-            st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
-        else:
-            sel_labels_mem = st.multiselect("Seleccionar Perfiles de Memoria de Sesión:", opciones_mem, key="sel_perfiles_1d_mem_ui")
-            
-            if 'last_sel_perfiles_1d_mem' not in st.session_state:
-                st.session_state.last_sel_perfiles_1d_mem = []
-                
-            if sel_labels_mem != st.session_state.last_sel_perfiles_1d_mem:
-                st.session_state.perfiles_seleccionados_1d = []
-                for label in sel_labels_mem:
-                    if label.startswith("[Archivo Completo] "):
-                        real_k = label.replace("[Archivo Completo] ", "")
-                        df = st.session_state.datos_procesados_1d[real_k].copy()
-                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
-                    elif label in st.session_state.sub_archivos_1d_memoria:
-                        sub = st.session_state.sub_archivos_1d_memoria[label]
-                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': sub['datos'].copy()})
-                st.session_state.last_sel_perfiles_1d_mem = sel_labels_mem
-                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Memoria.")
                 st.rerun()
 
     st.markdown("---")
