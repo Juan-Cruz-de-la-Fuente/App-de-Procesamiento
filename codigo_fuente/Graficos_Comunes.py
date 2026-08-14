@@ -117,18 +117,44 @@ def crear_superficie_diferencia_delaunay_3d(datos_a, datos_b, nombre_a, nombre_b
     except: return None
 
 def crear_grafico_diferencia_areas(sub_archivo_a, sub_archivo_b, configuracion, y_filtro_a=None, y_filtro_b=None, label_a=None, label_b=None):
-    z_a, p_a = extraer_datos_para_grafico(sub_archivo_a, configuracion, y_filtro=y_filtro_a)
-    z_b, p_b = extraer_datos_para_grafico(sub_archivo_b, configuracion, y_filtro=y_filtro_b)
-    if not z_a or not z_b: return None, 0
-    z_min, z_max = max(min(z_a), min(z_b)), min(max(z_a), max(z_b))
-    z_interp = np.linspace(z_min, z_max, 100)
-    p_a_i, p_b_i = np.interp(z_interp, z_a, p_a), np.interp(z_interp, z_b, p_b)
-    diff = p_a_i - p_b_i
-    fig = go.Figure()
-    lbl_a = label_a if label_a else sub_archivo_a.get('archivo_fuente', 'Perfil A')
-    lbl_b = label_b if label_b else sub_archivo_b.get('archivo_fuente', 'Perfil B')
-    fig.add_trace(go.Scatter(x=p_a_i, y=z_interp, name=lbl_a, line=dict(dash='dot')))
-    fig.add_trace(go.Scatter(x=p_b_i, y=z_interp, name=lbl_b, line=dict(dash='dot')))
-    fig.add_trace(go.Scatter(x=diff, y=z_interp, fill='toself', name='Diferencia (A-B)', line=dict(color='green' if np.mean(diff)>0 else 'red')))
-    fig.update_layout(title=f"Diferencia de Perfiles: {lbl_a} vs {lbl_b}", xaxis_title="Presión [Pa]", yaxis_title="Altura Z [mm]", height=500, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
-    return fig, float(np.trapz(np.abs(diff), z_interp))
+    try:
+        z_a, p_a = extraer_datos_para_grafico(sub_archivo_a, configuracion, y_filtro=y_filtro_a)
+        z_b, p_b = extraer_datos_para_grafico(sub_archivo_b, configuracion, y_filtro=y_filtro_b)
+        if not z_a or not z_b or len(z_a) < 2 or len(z_b) < 2:
+            return None, 0.0
+            
+        z_min = max(min(z_a), min(z_b))
+        z_max = min(max(z_a), max(z_b))
+        if z_max <= z_min:
+            return None, 0.0
+            
+        z_interp = np.linspace(z_min, z_max, 100)
+        p_a_i = np.interp(z_interp, z_a, p_a)
+        p_b_i = np.interp(z_interp, z_b, p_b)
+        diff = p_a_i - p_b_i
+        
+        # Integración trapezoidal manual independiente de versión de numpy
+        area_val = 0.0
+        abs_diff = np.abs(diff)
+        for i in range(len(z_interp) - 1):
+            dz = abs(z_interp[i+1] - z_interp[i])
+            area_val += dz * (abs_diff[i] + abs_diff[i+1]) / 2.0
+            
+        fig = go.Figure()
+        lbl_a = str(label_a) if label_a else sub_archivo_a.get('archivo_fuente', 'Perfil A')
+        lbl_b = str(label_b) if label_b else sub_archivo_b.get('archivo_fuente', 'Perfil B')
+        fig.add_trace(go.Scatter(x=p_a_i, y=z_interp, name=lbl_a, line=dict(dash='dot')))
+        fig.add_trace(go.Scatter(x=p_b_i, y=z_interp, name=lbl_b, line=dict(dash='dot')))
+        fig.add_trace(go.Scatter(x=diff, y=z_interp, fill='toself', name='Diferencia (A-B)', line=dict(color='green' if np.mean(diff)>0 else 'red')))
+        fig.update_layout(
+            title=f"Diferencia de Perfiles: {lbl_a} vs {lbl_b}", 
+            xaxis_title="Presión [Pa]", 
+            yaxis_title="Altura Z [mm]", 
+            height=500, 
+            paper_bgcolor="rgba(0,0,0,0)", 
+            plot_bgcolor="rgba(0,0,0,0)", 
+            font=dict(color="white")
+        )
+        return fig, float(area_val)
+    except Exception as e:
+        return None, 0.0
