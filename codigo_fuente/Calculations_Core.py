@@ -171,14 +171,15 @@ def obtener_numero_sensor_desde_columna(col_name):
         return int(nums[-1])
     return None
 
-def calcular_altura_absoluta_z(sensor_num, z_base_ref, posicion_inicial, distancia_entre_tomas, n_sensores, orden="asc"):
+def calcular_altura_absoluta_z(sensor_num, z_base_ref, posicion_inicial, distancia_entre_tomas, n_sensores=24, orden="asc"):
     if sensor_num is None:
         return None
     toma_index = int(sensor_num)
+    z_origin_shift = -posicion_inicial if posicion_inicial < 0 else 0
     if orden == "asc":
-        z_total = z_base_ref + (toma_index - 1) * distancia_entre_tomas
+        z_total = z_base_ref + posicion_inicial + z_origin_shift + (toma_index - 1) * distancia_entre_tomas
     else:
-        z_total = z_base_ref + (n_sensores - toma_index) * distancia_entre_tomas
+        z_total = z_base_ref + posicion_inicial + z_origin_shift + (n_sensores - toma_index) * distancia_entre_tomas
     return z_total
 
 def extraer_nombre_base_archivo(nombre_archivo):
@@ -233,77 +234,32 @@ def procesar_promedios(archivo_csv, orden="asc", archivo_infinito=None):
                 if nombre_sensor_norm is None: continue
                 valor = valor_raw
                 if isinstance(valor, str):
-                    valor = valor.replace(',', '.').strip()
-                try:
-                    valor_num = float(valor) if (valor is not None and str(valor) != '') else np.nan
-                except:
-                    valor_num = np.nan
-                fila[nombre_sensor_norm] = valor_num
+                    valor = valor.replace(',', '.')
+                fila[nombre_sensor_norm] = valor
+
             resultados.append(fila)
 
         df_resultado = pd.DataFrame(resultados)
-        if "Archivo" in df_resultado.columns:
-            coordenadas_tiempo = df_resultado["Archivo"].apply(extraer_tiempo_y_coordenadas_YZ)
-            df_resultado["Tiempo_s"] = [coord[0] for coord in coordenadas_tiempo]
-            df_resultado["Pos_Y_Traverser"] = [coord[1] for coord in coordenadas_tiempo]
-            df_resultado["Pos_Z_Base"] = [coord[2] for coord in coordenadas_tiempo]
+        if df_resultado.empty:
+            return None
 
-            def _extract_ts(n):
-                m = re.search(r'(\d{10,14})', str(n))
-                return m.group(1) if m else None
-            df_resultado["Timestamp"] = df_resultado["Archivo"].apply(_extract_ts)
+        coordenadas_tiempo = df_resultado["Archivo"].apply(extraer_tiempo_y_coordenadas_YZ)
+        df_resultado["Tiempo_s"] = [coord[0] for coord in coordenadas_tiempo]
+        df_resultado["Pos_Y_Traverser"] = [coord[1] for coord in coordenadas_tiempo]
+        df_resultado["Pos_Z_Base"] = [coord[2] for coord in coordenadas_tiempo]
 
-            inf_file = archivo_infinito if archivo_infinito else "Valores en el infinito.txt"
-            df_resultado["rho_inf"] = 1.225
-            df_resultado["V_inf"] = 0.0
-            df_resultado["P_inf"] = 101325.0
+        if archivo_infinito is not None:
+            try:
+                df_inf = pd.read_csv(archivo_infinito, sep=";", decimal=",", dtype=float)
+                if 'rho_inf' in df_inf.columns:
+                    df_resultado['rho_inf'] = df_inf['rho_inf'].iloc[0]
+                if 'V_inf' in df_inf.columns:
+                    df_resultado['V_inf'] = df_inf['V_inf'].iloc[0]
+                if 'P_inf' in df_inf.columns:
+                    df_resultado['P_inf'] = df_inf['P_inf'].iloc[0]
+            except:
+                pass
 
-            if os.path.exists(inf_file) or not isinstance(inf_file, str):
-                try:
-                    df_inf = pd.read_csv(inf_file, sep=";", engine="python", skip_blank_lines=True)
-                    df_inf.columns = [str(c).strip() for c in df_inf.columns]
-                    if len(df_inf.columns) > 2:
-                        first_col = df_inf.columns[0]
-                        df_inf["ts_clean"] = df_inf[first_col].astype(str).str.split(',').str[0].str.strip()
-                        df_inf["dt_val"] = pd.to_datetime(df_inf["ts_clean"], format='%d%m%y%H%M%S', errors='coerce')
-                        mask_failed = df_inf["dt_val"].isna()
-                        if mask_failed.any():
-                            df_inf.loc[mask_failed, "dt_val"] = pd.to_datetime(df_inf.loc[mask_failed, "ts_clean"], format='%y%m%d%H%M%S', errors='coerce')
-                        df_inf = df_inf.dropna(subset=["dt_val"])
-
-                        def get_inf_values(ts_str):
-                            try:
-                                if ts_str is None or str(ts_str) == 'None': return 1.225, 0.0, 101325.0, 15.0
-                                ts_clean = str(ts_str).split(',')[0].strip()
-                                target_dt = pd.to_datetime(ts_clean, format='%d%m%y%H%M%S', errors='coerce')
-                                if pd.isna(target_dt): target_dt = pd.to_datetime(ts_clean, format='%y%m%d%H%M%S', errors='coerce')
-                                if pd.isna(target_dt): return 1.225, 0.0, 101325.0, 15.0
-                                diffs = (df_inf["dt_val"] - target_dt).abs()
-                                idx = diffs.idxmin()
-                                row = df_inf.loc[idx]
-                                T = float(str(row.get("temp_baro", "15")).replace(",", "."))
-                                P_hpa = float(str(row.get("pres_baro", "1013.25")).replace(",", "."))
-                                HR = float(str(row.get("hrel", "50")).replace(",", "."))
-                                P_pa = P_hpa * 100.0
-                                T_kelvin = T + 273.15
-                                P_v_sat = 6.1078 * (10 ** ((7.5 * T)/(237.3 + T)))
-                                P_v = HR / 100.0 * P_v_sat
-                                P_d = P_hpa - P_v
-                                rho = (P_d * 100) / (287.058 * T_kelvin) + (P_v * 100) / (461.495 * T_kelvin)
-                                v_inf = float(str(row.get("velocidad", "0.0")).replace(",", "."))
-                                return rho, v_inf, P_pa, T
-                            except:
-                                return 1.225, 0.0, 101325.0, 15.0
-
-                        recs = df_resultado["Timestamp"].apply(get_inf_values)
-                        df_resultado["rho_inf"] = [r[0] for r in recs]
-                        df_resultado["V_inf"] = [r[1] for r in recs]
-                        df_resultado["P_inf"] = [r[2] for r in recs]
-                        df_resultado["T_inf"] = [r[3] for r in recs]
-                except: pass
-        
-        sensores_cols = [c for c in df_resultado.columns if re.search(r'Presion[-_ ]*Sensor', str(c), re.IGNORECASE)]
-        df_resultado.attrs["n_sensores"] = max([obtener_numero_sensor_desde_columna(c) for c in sensores_cols if obtener_numero_sensor_desde_columna(c) is not None], default=0)
         return df_resultado
     except Exception as e:
         return None
@@ -373,14 +329,12 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
         datos_tiempo = datos_tiempo.iloc[[fila_index]]
         
     distancia_entre_tomas = configuracion.get('distancia_entre_tomas', 10.0)
-    posicion_inicial = configuracion.get('distancia_toma_12', 0)
+    posicion_inicial = configuracion.get('distancia_toma_12', -120.0)
     orden = configuracion.get('orden', 'asc')
-    
-    # Llevar el sistema de referencia para empezar en 0 (Z_ref = 0 en el punto base)
-    z_origin_shift = -posicion_inicial if posicion_inicial < 0 else 0
     
     z_map = {}
     sensor_cols = [c for c in datos_tiempo.columns if re.search(r'(?i)presion[-_ ]*sensor', str(c))]
+    n_sensores = max([obtener_numero_sensor_desde_columna(c) for c in sensor_cols], default=24)
     
     for _, fila in datos_tiempo.iterrows():
         z_base_ref = fila.get('Pos_Z_Base', 0)
@@ -388,19 +342,10 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
             z_base_ref = 0
 
         for col in sensor_cols:
-            m_double = re.search(r'(?i)presion[-_ ]*sensor[_\-\s]*(\d+)[_\-\s]+(\d+)', str(col))
-            if m_double:
-                sensor_num = int(m_double.group(2))
-            else:
-                num = obtener_numero_sensor_desde_columna(col)
-                sensor_num = ((num - 1) % 12) + 1 if num else None
-
+            sensor_num = obtener_numero_sensor_desde_columna(col)
             if sensor_num is None: continue
             
-            if orden == "asc":
-                z_total = z_base_ref + posicion_inicial + z_origin_shift + (sensor_num - 1) * distancia_entre_tomas
-            else:
-                z_total = z_base_ref + posicion_inicial + z_origin_shift + (12 - sensor_num) * distancia_entre_tomas
+            z_total = calcular_altura_absoluta_z(sensor_num, z_base_ref, posicion_inicial, distancia_entre_tomas, n_sensores, orden)
                 
             presion = fila.get(col, None)
             if pd.isna(presion): continue
@@ -427,7 +372,6 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
         p_promedios = [float(np.mean(z_map[z])) for z in z_ordenados]
         return list(z_ordenados), list(p_promedios)
 
-    return [], []
     return [], []
 
 def unir_archivos_incertidumbre(archivos_lista, nombre_salida):
