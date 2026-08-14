@@ -231,10 +231,17 @@ def show_1d():
     filas_opciones = []
     sel_y_seccion = "Todas las Secciones Y"
 
+    def _format_y_val(val):
+        try:
+            v_num = float(val)
+            return f"{int(v_num)}" if v_num.is_integer() else f"{v_num:.1f}"
+        except:
+            return str(val)
+
     if has_pos_y:
         col_y1, col_y2 = st.columns([1, 1])
         with col_y1:
-            opciones_y = ["Todas las Secciones Y"] + [f"Sección Y = {y:.1f} mm" for y in y_secciones_disponibles]
+            opciones_y = ["Todas las Secciones Y"] + [f"Y = {_format_y_val(y)}" for y in y_secciones_disponibles]
             sel_y_seccion = st.selectbox("🎯 Filtrar por Sección Y (Plano XY):", opciones_y, key="sel_y_seccion_1d")
     else:
         # Fallback por mediciones/filas si Pos_Y_Traverser no diferenció distintas secciones
@@ -243,7 +250,9 @@ def show_1d():
                 df_p = perf['datos']
                 for i_row, row in df_p.iterrows():
                     arc_name = row.get('Archivo', f"Fila_{i_row+1}")
-                    sub_label = f"{perf['nombre']} - {arc_name} (Fila {i_row+1})"
+                    sub_label = f"Y = {_format_y_val(row.get('Pos_Y_Traverser', i_row))}"
+                    if len(st.session_state.perfiles_seleccionados_1d) > 1:
+                        sub_label += f" ({perf['nombre']})"
                     filas_opciones.append({'label': sub_label, 'perf_nombre': perf['nombre'], 'row_idx': i_row})
 
             col_y1, col_y2 = st.columns([1, 1])
@@ -261,12 +270,13 @@ def show_1d():
     else:
         fig = go.Figure()
         trazas_creadas = []
+        num_perfiles = len(st.session_state.perfiles_seleccionados_1d)
 
         if has_pos_y:
             y_target = None
             if sel_y_seccion != "Todas las Secciones Y":
                 try:
-                    y_target = float(sel_y_seccion.replace("Sección Y = ", "").replace(" mm", ""))
+                    y_target = float(sel_y_seccion.replace("Y = ", "").strip())
                 except:
                     y_target = None
 
@@ -277,23 +287,27 @@ def show_1d():
                 if y_target is not None:
                     z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_target)
                     if z and p:
-                        label_trace = f"{perf['nombre']} (Y={y_target:.1f}mm)"
+                        label_trace = f"Y = {_format_y_val(y_target)}"
+                        if num_perfiles > 1:
+                            label_trace += f" ({perf['nombre']})"
                         fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
                         trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
                 else:
                     for y_val in y_vals_in_perf:
                         z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_val)
                         if z and p:
-                            tag_y = f" (Y={y_val:.1f}mm)" if y_val is not None else ""
-                            label_trace = f"{perf['nombre']}{tag_y}"
+                            tag_y = f"Y = {_format_y_val(y_val)}" if y_val is not None else perf['nombre']
+                            label_trace = tag_y if num_perfiles == 1 else f"{tag_y} ({perf['nombre']})"
                             fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
                             trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
         else:
             for perf in st.session_state.perfiles_seleccionados_1d:
                 df_perf = perf['datos']
                 for i_row, row in df_perf.iterrows():
-                    arc_name = row.get('Archivo', f"Fila_{i_row+1}")
-                    sub_label = f"{perf['nombre']} - {arc_name} (Fila {i_row+1})"
+                    row_y = row.get('Pos_Y_Traverser', i_row)
+                    sub_label = f"Y = {_format_y_val(row_y)}"
+                    if num_perfiles > 1:
+                        sub_label += f" ({perf['nombre']})"
                     if sel_y_seccion == "Todas las Mediciones / Filas" or sel_y_seccion == sub_label:
                         z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, fila_index=i_row)
                         if z and p:

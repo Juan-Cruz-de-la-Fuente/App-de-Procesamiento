@@ -297,7 +297,11 @@ def crear_archivos_individuales_por_tiempo_y_posicion(df_resultado, nombre_archi
         t_vals = df_y["Tiempo_s"].dropna().unique()
         for tiempo in sorted(t_vals):
             df_yt = df_y[df_y["Tiempo_s"] == tiempo]
-            clave_sub_archivo = f"{nombre_original}_X{int(y_valor) if pd.notna(y_valor) else 0}_T{tiempo}s"
+            try:
+                y_str = int(y_valor) if float(y_valor).is_integer() else y_valor
+            except:
+                y_str = y_valor
+            clave_sub_archivo = f"Y={y_str}_T{tiempo}s"
             num_z = len(df_yt['Pos_Z_Base'].unique()) if 'Pos_Z_Base' in df_yt.columns else 1
             sub_archivos[clave_sub_archivo] = {
                 'archivo_fuente': nombre_base,
@@ -305,7 +309,7 @@ def crear_archivos_individuales_por_tiempo_y_posicion(df_resultado, nombre_archi
                 'tiempo': tiempo,
                 'pos_y_traverser': y_valor,
                 'datos': df_yt,
-                'nombre_archivo': f"{clave_sub_archivo}.csv",
+                'nombre_archivo': f"Y={y_str}_T{tiempo}s.csv",
                 'num_posiciones_z': num_z
             }
     return sub_archivos
