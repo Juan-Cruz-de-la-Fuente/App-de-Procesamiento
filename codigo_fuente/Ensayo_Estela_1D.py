@@ -16,71 +16,7 @@ from codigo_fuente.Calculations_Core import (
     calcular_posiciones_sensores
 )
 from codigo_fuente import Auth_Manager as auth
-
-def crear_grafico_diferencia_areas(sub_archivo_a, sub_archivo_b, configuracion):
-    """Crear gráfico mostrando la diferencia como UNA sola área"""
-    z_a, presion_a = extraer_datos_para_grafico(sub_archivo_a, configuracion)
-    z_b, presion_b = extraer_datos_para_grafico(sub_archivo_b, configuracion)
-    
-    if not z_a or not z_b or not presion_a or not presion_b:
-        return None, 0
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=presion_a, y=z_a,
-        mode='lines',
-        name=f"{sub_archivo_a['archivo_fuente']} T{sub_archivo_a['tiempo']}s",
-        line=dict(color='#08596C', width=2, dash='dot'),
-        opacity=0.6,
-        hovertemplate='<b>%{fullData.name}</b><br>Presión: %{x:.3f} Pa<br>Altura: %{y:.1f} mm<br><extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=presion_b, y=z_b,
-        mode='lines',
-        name=f"{sub_archivo_b['archivo_fuente']} T{sub_archivo_b['tiempo']}s",
-        line=dict(color='#E74C3C', width=2, dash='dot'),
-        opacity=0.6,
-        hovertemplate='<b>%{fullData.name}</b><br>Presión: %{x:.3f} Pa<br>Altura: %{y:.1f} mm<br><extra></extra>'
-    ))
-    
-    z_min = max(min(z_a), min(z_b))
-    z_max = min(max(z_a), max(z_b))
-    
-    if z_max <= z_min:
-        return fig, 0
-        
-    z_comun = np.linspace(z_min, z_max, 200)
-    p_a_interp = np.interp(z_comun, z_a, presion_a)
-    p_b_interp = np.interp(z_comun, z_b, presion_b)
-    
-    fig.add_trace(go.Scatter(
-        x=np.concatenate([p_a_interp, p_b_interp[::-1]]),
-        y=np.concatenate([z_comun, z_comun[::-1]]),
-        fill='toself',
-        fillcolor='rgba(155, 89, 182, 0.3)',
-        line=dict(color='rgba(255,255,255,0)'),
-        hoverinfo='skip',
-        showlegend=False,
-        name='Diferencia'
-    ))
-    
-    area_a = calcular_area_bajo_curva(z_a, presion_a)
-    area_b = calcular_area_bajo_curva(z_b, presion_b)
-    diferencia_area = area_a - area_b
-    
-    fig.update_layout(
-        title=f"Diferencia de Perfiles: {sub_archivo_a['archivo_fuente']} vs {sub_archivo_b['archivo_fuente']}",
-        xaxis_title="Presión [Pa]",
-        yaxis_title="Altura Z [mm]",
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        height=600
-    )
-    
-    return fig, diferencia_area
+from codigo_fuente.Graficos_Comunes import mostrar_configuracion_sensores, crear_grafico_diferencia_areas
 
 def show_1d():
     st.markdown("# 📊 VISUALIZACIÓN DE ESTELA 1D - Análisis Unidimensional")
@@ -90,8 +26,6 @@ def show_1d():
     if "datos_procesados_1d" not in st.session_state: st.session_state.datos_procesados_1d = {}
     if "sub_archivos_1d_memoria" not in st.session_state: st.session_state.sub_archivos_1d_memoria = {}
     if "perfiles_seleccionados_1d" not in st.session_state: st.session_state.perfiles_seleccionados_1d = []
-
-    from codigo_fuente.Graficos_Comunes import mostrar_configuracion_sensores
 
     # --- CARGA Y CONFIGURACIÓN (EXPANDER ÚNICO) ---
     with st.expander("📥 CARGA Y CONFIGURACIÓN DE PERFILES NUEVOS", expanded=False):
