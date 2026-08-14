@@ -185,7 +185,7 @@ def show_1d():
                 st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Drive.")
                 st.rerun()
     else:
-        opciones_mem = list(st.session_state.sub_archivos_1d_memoria.keys()) + [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()]
+        opciones_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()] + list(st.session_state.sub_archivos_1d_memoria.keys())
         if not opciones_mem:
             st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
         else:
