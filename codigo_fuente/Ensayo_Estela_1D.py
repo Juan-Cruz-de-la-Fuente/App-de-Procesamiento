@@ -310,7 +310,7 @@ def show_1d():
                         if num_perfiles > 1:
                             label_trace += f" ({perf['nombre']})"
                         fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
-                        trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
+                        trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}, 'y_val': y_val, 'fila_index': None})
         else:
             for perf in st.session_state.perfiles_seleccionados_1d:
                 df_perf = perf['datos']
@@ -323,7 +323,7 @@ def show_1d():
                         z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, fila_index=i_row)
                         if z and p:
                             fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=sub_label))
-                            trazas_creadas.append({'nombre': sub_label, 'z': z, 'p': p, 'sub': {'datos': df_perf.iloc[[i_row]], 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
+                            trazas_creadas.append({'nombre': sub_label, 'z': z, 'p': p, 'sub': {'datos': df_perf.iloc[[i_row]], 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}, 'y_val': None, 'fila_index': i_row})
 
         fig.update_layout(
             title="Perfil de Presiones a lo largo del Eje Z",
@@ -347,20 +347,9 @@ def show_1d():
             t1 = next((t for t in trazas_creadas if t['nombre'] == sel_a), trazas_creadas[0])
             t2 = next((t for t in trazas_creadas if t['nombre'] == sel_b), trazas_creadas[1])
             
-            y_target_a = None
-            y_target_b = None
-            try:
-                if sel_a.startswith("Y = "):
-                    y_target_a = float(sel_a.split()[2])
-            except: pass
-            try:
-                if sel_b.startswith("Y = "):
-                    y_target_b = float(sel_b.split()[2])
-            except: pass
-
             fig_diff, area = crear_grafico_diferencia_areas(
                 t1['sub'], t2['sub'], conf_vis, 
-                y_filtro_a=y_target_a, y_filtro_b=y_target_b,
+                y_filtro_a=t1.get('y_val'), y_filtro_b=t2.get('y_val'),
                 label_a=sel_a, label_b=sel_b
             )
             if fig_diff:
