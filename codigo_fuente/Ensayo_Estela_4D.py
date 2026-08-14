@@ -147,7 +147,42 @@ def show_4d():
         if not st.session_state.archivos_4d_memoria:
             st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
         else:
-            st.info("Funcionalidad de carga múltiple desde memoria en desarrollo. Por favor guarde en Drive y cargue desde allí para el análisis 4D multicapa.")
+            opciones_4d_mem = list(st.session_state.archivos_4d_memoria.keys())
+            sel_labels_4d_mem = st.multiselect("Seleccionar Archivos de Memoria para Planos 4D:", opciones_4d_mem, key="sel_planos_4d_mem_ui")
+            
+            if 'last_sel_planos_4d_mem' not in st.session_state:
+                st.session_state.last_sel_planos_4d_mem = []
+                
+            if sel_labels_4d_mem != st.session_state.last_sel_planos_4d_mem:
+                loaded = []
+                conf = st.session_state.get('configuracion_4d_local', {'distancia_toma_12': 0, 'distancia_entre_tomas': 10.0, 'orden': 'asc'})
+                for lbl in sel_labels_4d_mem:
+                    df_arc = st.session_state.archivos_4d_memoria[lbl]
+                    tiempos = sorted(df_arc['Tiempo_s'].dropna().unique()) if 'Tiempo_s' in df_arc.columns else [0]
+                    t_sel_mem = tiempos[0]
+                    df_run = df_arc[df_arc['Tiempo_s'] == t_sel_mem] if 'Tiempo_s' in df_arc.columns else df_arc
+                    
+                    res = []
+                    for _, row in df_run.iterrows():
+                        y_t = row.get('Pos_Y_Traverser', 0)
+                        z_b = row.get('Pos_Z_Base', 0)
+                        for col in df_run.columns:
+                            num = obtener_numero_sensor_desde_columna(col)
+                            if num is not None:
+                                val = row[col]
+                                if pd.isna(val): continue
+                                z_r = calcular_altura_absoluta_z(num, z_b, conf['distancia_toma_12'], conf['distancia_entre_tomas'], 12, conf['orden'])
+                                res.append({'Y': y_t, 'Z': z_r, 'Presion': val})
+                    
+                    df_plane = pd.DataFrame(res)
+                    if not df_plane.empty:
+                        json_str = df_plane.to_json(orient='records')
+                        loaded.append((f"mem_{lbl}", lbl, 0.0, "Memoria", json_str))
+                
+                st.session_state.planos_seleccionados_4d = loaded
+                st.session_state.last_sel_planos_4d_mem = sel_labels_4d_mem
+                st.success(f"✅ {len(loaded)} planos de memoria cargados para visualización 4D.")
+                st.rerun()
 
     st.markdown("---")
 

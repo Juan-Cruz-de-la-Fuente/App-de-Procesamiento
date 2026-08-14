@@ -133,10 +133,33 @@ def show_2d():
         if not st.session_state.archivos_2d_memoria:
             st.warning("⚠️ No hay matrices en la memoria de sesión. Procese archivos en el Paso 1 primero.")
         else:
-            arc_mem_sel = st.selectbox("Seleccionar Matriz en Memoria:", list(st.session_state.archivos_2d_memoria.keys()))
-            if st.button("📥 Cargar Matriz al Visualizador", use_container_width=True):
-                st.session_state.matriz_seleccionada_2d = st.session_state.archivos_2d_memoria[arc_mem_sel]
-                st.success("✅ Matriz de memoria cargada.")
+            arc_mem_sel = st.selectbox("Seleccionar Matriz en Memoria:", list(st.session_state.archivos_2d_memoria.keys()), key="sel_mem_2d_ui")
+            df_arc = st.session_state.archivos_2d_memoria[arc_mem_sel]
+            tiempos = sorted(df_arc['Tiempo_s'].dropna().unique()) if 'Tiempo_s' in df_arc.columns else [0]
+            t_sel_mem = st.selectbox("Tiempo [s]:", tiempos, key="t_sel_mem_2d_ui") if len(tiempos) > 1 else tiempos[0]
+            
+            if st.button("📥 Cargar Matriz al Visualizador", use_container_width=True, key="btn_load_mem_2d"):
+                conf = st.session_state.get('configuracion_2d_local', {'distancia_toma_12': 0, 'distancia_entre_tomas': 10.0, 'orden': 'asc'})
+                df_run = df_arc[df_arc['Tiempo_s'] == t_sel_mem] if 'Tiempo_s' in df_arc.columns else df_arc
+                res = []
+                for _, row in df_run.iterrows():
+                    y_t = row.get('Pos_Y_Traverser', 0)
+                    z_b = row.get('Pos_Z_Base', 0)
+                    for col in df_run.columns:
+                        num = obtener_numero_sensor_desde_columna(col)
+                        if num is not None:
+                            val = row[col]
+                            if pd.isna(val): continue
+                            z_r = calcular_altura_absoluta_z(num, z_b, conf['distancia_toma_12'], conf['distancia_entre_tomas'], 12, conf['orden'])
+                            res.append({'Y': y_t, 'Z': z_r, 'Presion': val, 'rho_inf': row.get('rho_inf', 1.225), 'V_inf': row.get('V_inf', 0.0), 'P_inf': row.get('P_inf', 101325.0)})
+                
+                df_matriz_mem = pd.DataFrame(res)
+                if not df_matriz_mem.empty:
+                    st.session_state.matriz_seleccionada_2d = df_matriz_mem
+                    st.success(f"✅ Matriz de memoria ({arc_mem_sel}) cargada y lista para visualizar.")
+                    st.rerun()
+                else:
+                    st.error("No se pudieron procesar los puntos de la matriz.")
 
     st.markdown("---")
 

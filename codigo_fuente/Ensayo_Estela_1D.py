@@ -153,6 +153,8 @@ def show_1d():
         except:
             files_drv = []
 
+        if not files_drv:
+            st.info("No se encontraron perfiles guardados en Drive.")
         else:
             sel_labels = st.multiselect("Seleccionar Perfiles de Drive:", files_drv, key="sel_perfiles_1d_ui")
             
@@ -167,21 +169,87 @@ def show_1d():
                         csv_content = auth.get_csv_content_1d(st.session_state.username, label)
                         if csv_content:
                             df = pd.read_csv(io.StringIO(csv_content), sep=';', decimal=',')
+                            # Asegurar columnas Pos_Y_Traverser y Pos_Z_Base
+                            if 'Pos_Y_Traverser' not in df.columns and 'Archivo' in df.columns:
+                                coords = df['Archivo'].apply(extraer_tiempo_y_coordenadas_YZ)
+                                df['Tiempo_s'] = [c[0] for c in coords]
+                                df['Pos_Y_Traverser'] = [c[1] for c in coords]
+                                df['Pos_Z_Base'] = [c[2] for c in coords]
+                            elif 'Pos_Y_Traverser' not in df.columns:
+                                t_v, y_v, z_v = extraer_tiempo_y_coordenadas_YZ(label)
+                                df['Pos_Y_Traverser'] = y_v if y_v is not None else 0
+                                df['Pos_Z_Base'] = z_v if z_v is not None else 0
+
                             st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
                     st.session_state.last_sel_perfiles_1d = sel_labels
-                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados.")
+                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Drive.")
                 st.rerun()
     else:
-        if not st.session_state.sub_archivos_1d_memoria:
-            st.warning("⚠️ No hay sub-archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
+        opciones_mem = list(st.session_state.sub_archivos_1d_memoria.keys()) + [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_1d.keys()]
+        if not opciones_mem:
+            st.warning("⚠️ No hay archivos en la memoria de sesión. Procese archivos en el Paso 1 primero.")
         else:
-            st.info("Funcionalidad de carga múltiple desde memoria en desarrollo. Por favor guarde en Drive y cargue desde allí para el análisis comparativo.")
+            sel_labels_mem = st.multiselect("Seleccionar Perfiles de Memoria de Sesión:", opciones_mem, key="sel_perfiles_1d_mem_ui")
+            
+            if 'last_sel_perfiles_1d_mem' not in st.session_state:
+                st.session_state.last_sel_perfiles_1d_mem = []
+                
+            if sel_labels_mem != st.session_state.last_sel_perfiles_1d_mem:
+                st.session_state.perfiles_seleccionados_1d = []
+                for label in sel_labels_mem:
+                    if label.startswith("[Archivo Completo] "):
+                        real_k = label.replace("[Archivo Completo] ", "")
+                        df = st.session_state.datos_procesados_1d[real_k].copy()
+                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': df})
+                    elif label in st.session_state.sub_archivos_1d_memoria:
+                        sub = st.session_state.sub_archivos_1d_memoria[label]
+                        st.session_state.perfiles_seleccionados_1d.append({'nombre': label, 'datos': sub['datos'].copy()})
+                st.session_state.last_sel_perfiles_1d_mem = sel_labels_mem
+                st.success(f"✅ {len(st.session_state.perfiles_seleccionados_1d)} perfiles cargados desde Memoria.")
+                st.rerun()
 
     st.markdown("---")
 
     # --- PASO 3 (Sin Expander) ---
     st.markdown("### 🛠️ PASO 3: Configuración de Visualización")
     conf_vis = mostrar_configuracion_sensores("1d_vis")
+
+    # Detección de secciones Y disponibles
+    y_secciones_disponibles = []
+    has_pos_y = False
+    if st.session_state.perfiles_seleccionados_1d:
+        for perf in st.session_state.perfiles_seleccionados_1d:
+            if 'datos' in perf and 'Pos_Y_Traverser' in perf['datos'].columns:
+                y_vals = perf['datos']['Pos_Y_Traverser'].dropna().unique()
+                for y_v in y_vals:
+                    if y_v not in y_secciones_disponibles:
+                        y_secciones_disponibles.append(y_v)
+        y_secciones_disponibles = sorted(y_secciones_disponibles)
+        if len(y_secciones_disponibles) > 1 or (len(y_secciones_disponibles) == 1 and y_secciones_disponibles[0] != 0):
+            has_pos_y = True
+
+    filas_opciones = []
+    sel_y_seccion = "Todas las Secciones Y"
+
+    if has_pos_y:
+        col_y1, col_y2 = st.columns([1, 1])
+        with col_y1:
+            opciones_y = ["Todas las Secciones Y"] + [f"Sección Y = {y:.1f} mm" for y in y_secciones_disponibles]
+            sel_y_seccion = st.selectbox("🎯 Filtrar por Sección Y (Plano XY):", opciones_y, key="sel_y_seccion_1d")
+    else:
+        # Fallback por mediciones/filas si Pos_Y_Traverser no diferenció distintas secciones
+        if st.session_state.perfiles_seleccionados_1d:
+            for perf in st.session_state.perfiles_seleccionados_1d:
+                df_p = perf['datos']
+                for i_row, row in df_p.iterrows():
+                    arc_name = row.get('Archivo', f"Fila_{i_row+1}")
+                    sub_label = f"{perf['nombre']} - {arc_name} (Fila {i_row+1})"
+                    filas_opciones.append({'label': sub_label, 'perf_nombre': perf['nombre'], 'row_idx': i_row})
+
+            col_y1, col_y2 = st.columns([1, 1])
+            with col_y1:
+                opts_f = ["Todas las Mediciones / Filas"] + [f['label'] for f in filas_opciones]
+                sel_y_seccion = st.selectbox("🎯 Filtrar por Medición / Sección Y (Plano XY):", opts_f, key="sel_y_seccion_1d_fallback")
 
     st.markdown("---")
 
@@ -192,20 +260,63 @@ def show_1d():
         st.warning("⚠️ Seleccione y cargue perfiles en el Paso 2 para ver el gráfico.")
     else:
         fig = go.Figure()
-        for perf in st.session_state.perfiles_seleccionados_1d:
-            z, p = extraer_datos_para_grafico({'datos': perf['datos'], 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}, conf_vis)
-            if z and p:
-                fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=perf['nombre']))
-        
-        fig.update_layout(xaxis_title="Presión [Pa]", yaxis_title="Altura Z [mm]", height=600, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+        trazas_creadas = []
+
+        if has_pos_y:
+            y_target = None
+            if sel_y_seccion != "Todas las Secciones Y":
+                try:
+                    y_target = float(sel_y_seccion.replace("Sección Y = ", "").replace(" mm", ""))
+                except:
+                    y_target = None
+
+            for perf in st.session_state.perfiles_seleccionados_1d:
+                df_perf = perf['datos']
+                y_vals_in_perf = df_perf['Pos_Y_Traverser'].dropna().unique() if 'Pos_Y_Traverser' in df_perf.columns else [None]
+                
+                if y_target is not None:
+                    z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_target)
+                    if z and p:
+                        label_trace = f"{perf['nombre']} (Y={y_target:.1f}mm)"
+                        fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
+                        trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
+                else:
+                    for y_val in y_vals_in_perf:
+                        z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, y_filtro=y_val)
+                        if z and p:
+                            tag_y = f" (Y={y_val:.1f}mm)" if y_val is not None else ""
+                            label_trace = f"{perf['nombre']}{tag_y}"
+                            fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=label_trace))
+                            trazas_creadas.append({'nombre': label_trace, 'z': z, 'p': p, 'sub': {'datos': df_perf, 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
+        else:
+            for perf in st.session_state.perfiles_seleccionados_1d:
+                df_perf = perf['datos']
+                for i_row, row in df_perf.iterrows():
+                    arc_name = row.get('Archivo', f"Fila_{i_row+1}")
+                    sub_label = f"{perf['nombre']} - {arc_name} (Fila {i_row+1})"
+                    if sel_y_seccion == "Todas las Mediciones / Filas" or sel_y_seccion == sub_label:
+                        z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, fila_index=i_row)
+                        if z and p:
+                            fig.add_trace(go.Scatter(x=p, y=z, mode='lines+markers', name=sub_label))
+                            trazas_creadas.append({'nombre': sub_label, 'z': z, 'p': p, 'sub': {'datos': df_perf.iloc[[i_row]], 'archivo_fuente': perf['nombre'], 'tiempo': 'N/A'}})
+
+        fig.update_layout(
+            title="Perfil de Presiones a lo largo del Eje Z",
+            xaxis_title="Presión [Pa]", 
+            yaxis_title="Altura Z [mm]", 
+            height=600, 
+            paper_bgcolor="rgba(0,0,0,0)", 
+            plot_bgcolor="rgba(0,0,0,0)", 
+            font=dict(color="white")
+        )
         st.plotly_chart(fig, use_container_width=True)
         
-        if len(st.session_state.perfiles_seleccionados_1d) >= 2:
+        if len(trazas_creadas) >= 2:
             st.markdown("### 📊 Comparativa de Áreas")
-            p1 = st.session_state.perfiles_seleccionados_1d[0]
-            p2 = st.session_state.perfiles_seleccionados_1d[1]
-            fig_diff, area = crear_grafico_diferencia_areas({'datos': p1['datos'], 'archivo_fuente': p1['nombre'], 'tiempo': 'N/A'}, 
-                                                           {'datos': p2['datos'], 'archivo_fuente': p2['nombre'], 'tiempo': 'N/A'}, conf_vis)
+            t1 = trazas_creadas[0]
+            t2 = trazas_creadas[1]
+            fig_diff, area = crear_grafico_diferencia_areas(t1['sub'], t2['sub'], conf_vis)
             if fig_diff:
                 st.plotly_chart(fig_diff, use_container_width=True)
                 st.metric("Diferencia de Área (A-B)", f"{area:.4f}")
+

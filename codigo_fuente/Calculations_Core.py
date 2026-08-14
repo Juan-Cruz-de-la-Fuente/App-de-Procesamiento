@@ -62,6 +62,7 @@ def extraer_tiempo_y_coordenadas_YZ(nombre_archivo):
     nombre = os.path.basename(str(nombre_archivo))
     nombre_sin_ext = re.sub(r'\.\w+$', '', nombre)
 
+    # 1. Extracción de Tiempo
     partes = nombre_sin_ext.split('_')
     if partes and partes[-1].isdigit():
         try:
@@ -74,29 +75,34 @@ def extraer_tiempo_y_coordenadas_YZ(nombre_archivo):
         if tiempo_match:
             tiempo = int(tiempo_match.group(1))
 
-    x_match = re.search(r"[Xx][_\-=]?(-?\d+)", nombre_sin_ext)
+    # 2. Extracción de Z Base (Z o Pos_Z)
+    z_match = re.search(r"(?:[Zz]|Pos[_\-]?Z)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
+    if z_match:
+        try:
+            z_base = float(z_match.group(1).replace(',', '.'))
+        except:
+            pass
+
+    # 3. Extracción de Y Traverser (Y o Pos_Y)
+    y_explicit_match = re.search(r"(?:[Yy]|Pos[_\-]?Y)[_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext, re.IGNORECASE)
+    if y_explicit_match:
+        try:
+            y_traverser = float(y_explicit_match.group(1).replace(',', '.'))
+        except:
+            pass
+
+    # 4. Convención alternativa: X para Traverser Y, Y para Z Base
+    x_match = re.search(r"[Xx][_\-=]?(-?\d+(?:[.,]\d+)?)", nombre_sin_ext)
     if x_match:
         try:
-            y_traverser = int(x_match.group(1))
+            y_traverser = float(x_match.group(1).replace(',', '.'))
         except:
             pass
-    
-    if y_traverser is None:
-        m = re.search(r"[Xx]\s*(\d+)", nombre_sin_ext)
-        if m:
-            y_traverser = int(m.group(1))
-
-    y_match = re.search(r"[Yy][_\-=]?(-?\d+)", nombre_sin_ext)
-    if y_match:
-        try:
-            z_base = int(y_match.group(1))
-        except:
-            pass
-            
-    if z_base is None:
-        m = re.search(r"[Yy]\s*(\d+)", nombre_sin_ext)
-        if m:
-            z_base = int(m.group(1))
+        if z_base is None and y_explicit_match:
+            try:
+                z_base = float(y_explicit_match.group(1).replace(',', '.'))
+            except:
+                pass
 
     return tiempo, y_traverser, z_base
 
@@ -333,8 +339,14 @@ def calcular_posiciones_sensores(distancia_toma_12, distancia_entre_tomas, n_sen
         posiciones[f"Presion-Sensor {sensor_num}"] = {'x': 0, 'y': y_position, 'sensor_fisico': sensor_num}
     return posiciones
 
-def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Total'):
+def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Total', y_filtro=None, fila_index=None):
     datos_tiempo = sub_archivo['datos']
+    
+    if y_filtro is not None and 'Pos_Y_Traverser' in datos_tiempo.columns:
+        datos_tiempo = datos_tiempo[datos_tiempo['Pos_Y_Traverser'] == y_filtro]
+    elif fila_index is not None and 0 <= fila_index < len(datos_tiempo):
+        datos_tiempo = datos_tiempo.iloc[[fila_index]]
+        
     distancia_entre_tomas = configuracion.get('distancia_entre_tomas', 10.0)
     posicion_inicial = configuracion.get('distancia_toma_12', 0)
     orden = configuracion.get('orden', 'asc')
@@ -343,6 +355,8 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
     n_sensores = max([obtener_numero_sensor_desde_columna(c) for c in sensor_cols], default=0)
     for _, fila in datos_tiempo.iterrows():
         z_base_ref = fila.get('Pos_Z_Base', 0)
+        if pd.isna(z_base_ref):
+            z_base_ref = 0
         for col in sensor_cols:
             sensor_num = obtener_numero_sensor_desde_columna(col)
             if sensor_num is None: continue
