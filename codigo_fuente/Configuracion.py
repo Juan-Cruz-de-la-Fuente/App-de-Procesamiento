@@ -14,8 +14,8 @@ def show_configuracion():
     
     st.markdown("### 🔌 Estado del Sistema")
     
-    db_ok = os.path.exists("users.db")
-    db_size = os.path.getsize("users.db") / 1024 if db_ok else 0
+    db_ok = os.path.exists(auth.DB_NAME)
+    db_size = os.path.getsize(auth.DB_NAME) / 1024 if db_ok else 0
     
     c1, c2, c3 = st.columns(3)
     with c1:
