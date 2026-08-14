@@ -119,6 +119,7 @@ def show_1d():
                             st.session_state.datos_procesados_1d[f.name] = datos
                             subs = crear_archivos_individuales_por_tiempo_y_posicion(datos, f.name)
                             st.session_state.sub_archivos_1d_memoria.update(subs)
+                            st.session_state.perfiles_seleccionados_1d = [{'nombre': f"[Archivo Completo] {f.name}", 'datos': datos}]
             st.success(f"✅ {len(st.session_state.datos_procesados_1d)} archivos en memoria.")
 
         st.markdown("#### 🚀 Subir a Drive (1D)")

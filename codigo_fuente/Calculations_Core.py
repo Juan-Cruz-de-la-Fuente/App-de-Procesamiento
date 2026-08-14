@@ -157,7 +157,12 @@ def normalizar_nombre_sensor(sensor_text):
 def obtener_numero_sensor_desde_columna(col_name):
     if pd.isna(col_name):
         return None
-    s = str(col_name)
+    s = str(col_name).strip()
+    m_double = re.search(r'(?i)presion[-_ ]*sensor[_\-\s]*(\d+)[_\-\s]+(\d+)', s)
+    if m_double:
+        offset = int(m_double.group(1))
+        idx = int(m_double.group(2))
+        return offset * 12 + idx
     m = re.search(r'(?i)presion[-_ ]*sensor[_\-\s]*(\d+)', s)
     if m:
         return int(m.group(1))
