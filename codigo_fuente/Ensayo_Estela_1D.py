@@ -226,7 +226,7 @@ def show_1d():
                     if y_v not in y_secciones_disponibles:
                         y_secciones_disponibles.append(y_v)
         y_secciones_disponibles = sorted(y_secciones_disponibles)
-        if len(y_secciones_disponibles) > 1 or (len(y_secciones_disponibles) == 1 and y_secciones_disponibles[0] != 0):
+        if len(y_secciones_disponibles) > 0:
             has_pos_y = True
 
     filas_opciones = []

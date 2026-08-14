@@ -375,19 +375,33 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
     distancia_entre_tomas = configuracion.get('distancia_entre_tomas', 10.0)
     posicion_inicial = configuracion.get('distancia_toma_12', 0)
     orden = configuracion.get('orden', 'asc')
-    z_datos, presion_datos = [], []
+    
+    z_map = {}
     sensor_cols = [c for c in datos_tiempo.columns if re.search(r'(?i)presion[-_ ]*sensor', str(c))]
-    n_sensores = max([obtener_numero_sensor_desde_columna(c) for c in sensor_cols], default=0)
+    
     for _, fila in datos_tiempo.iterrows():
         z_base_ref = fila.get('Pos_Z_Base', 0)
         if pd.isna(z_base_ref):
             z_base_ref = 0
+
         for col in sensor_cols:
-            sensor_num = obtener_numero_sensor_desde_columna(col)
+            m_double = re.search(r'(?i)presion[-_ ]*sensor[_\-\s]*(\d+)[_\-\s]+(\d+)', str(col))
+            if m_double:
+                sensor_num = int(m_double.group(2))
+            else:
+                num = obtener_numero_sensor_desde_columna(col)
+                sensor_num = ((num - 1) % 12) + 1 if num else None
+
             if sensor_num is None: continue
-            z_total = calcular_altura_absoluta_z(sensor_num, z_base_ref, posicion_inicial, distancia_entre_tomas, n_sensores, orden)
+            
+            if orden == "asc":
+                z_total = z_base_ref + posicion_inicial + (sensor_num - 1) * distancia_entre_tomas
+            else:
+                z_total = z_base_ref + posicion_inicial + (12 - sensor_num) * distancia_entre_tomas
+                
             presion = fila.get(col, None)
             if pd.isna(presion): continue
+            
             try:
                 presion_val = float(str(presion).replace(',', '.'))
                 valor_final = presion_val
@@ -398,13 +412,19 @@ def extraer_datos_para_grafico(sub_archivo, configuracion, variable='Presion Tot
                     valor_final = float(fila.get('V_inf', 0.0))
                 elif variable == 'Presion Infinito':
                     valor_final = float(fila.get('P_inf', 101325.0))
-                z_datos.append(z_total)
-                presion_datos.append(valor_final)
+                
+                z_round = round(float(z_total), 2)
+                if z_round not in z_map:
+                    z_map[z_round] = []
+                z_map[z_round].append(valor_final)
             except: continue
-    if z_datos and presion_datos:
-        datos_ordenados = sorted(zip(z_datos, presion_datos))
-        z_ordenado, presion_ordenada = zip(*datos_ordenados)
-        return list(z_ordenado), list(presion_ordenada)
+
+    if z_map:
+        z_ordenados = sorted(z_map.keys())
+        p_promedios = [float(np.mean(z_map[z])) for z in z_ordenados]
+        return list(z_ordenados), list(p_promedios)
+
+    return [], []
     return [], []
 
 def unir_archivos_incertidumbre(archivos_lista, nombre_salida):
