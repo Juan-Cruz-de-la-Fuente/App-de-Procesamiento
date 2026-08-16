@@ -169,6 +169,9 @@ def render_navbar():
                     if st.button("🌌 Vis. Estela 4D", use_container_width=True):
                         st.session_state.seccion_actual = 'betz_4d'
                         st.rerun()
+                    if st.button("🌬️ Capa Límite", use_container_width=True):
+                        st.session_state.seccion_actual = 'capa_limite'
+                        st.rerun()
                     if st.button("🌀 Análisis de Vórtices", use_container_width=True):
                         st.session_state.seccion_actual = 'vortices'
                         st.rerun()
@@ -251,6 +254,9 @@ else:
     elif st.session_state.seccion_actual == 'betz_4d':
         from codigo_fuente.Ensayo_Estela_4D import show_4d
         show_4d()
+    elif st.session_state.seccion_actual == 'capa_limite':
+        from codigo_fuente.Ensayo_Estela_CapaLimite import show_capa_limite
+        show_capa_limite()
     elif st.session_state.seccion_actual == 'vortices':
         from codigo_fuente.Ensayo_Estela_Analisis_Vortices import show_vortices
         show_vortices()
