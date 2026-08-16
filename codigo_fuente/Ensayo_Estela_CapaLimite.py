@@ -121,6 +121,7 @@ def show_capa_limite():
         sel_save = st.selectbox("Seleccionar Archivo para guardar:", opciones_cl, key="sel_save_cl")
         
         df_target = None
+        tiempos = [0]
         if st.session_state.datos_procesados_cl or st.session_state.sub_archivos_cl_memoria:
             if sel_save.startswith("[Archivo Completo] "):
                 real_k = sel_save.replace("[Archivo Completo] ", "")
@@ -129,7 +130,17 @@ def show_capa_limite():
                 sub = st.session_state.sub_archivos_cl_memoria[sel_save]
                 df_target = sub['datos']
                 
-        nombre_final_cl = st.text_input("Nombre del archivo a guardar:", value="Capa_Limite_Guardado.csv", key="nombre_final_cl_save")
+            if df_target is not None and 'Tiempo_s' in df_target.columns:
+                tiempos = sorted(df_target['Tiempo_s'].dropna().unique())
+                
+        t_sel = st.selectbox("Tiempo [s]:", tiempos, key="t_sel_save_cl")
+        
+        c1_s, c2_s = st.columns(2)
+        x_pos = c1_s.number_input("Posición X [mm]:", value=0.0, key="x_pos_cl_save")
+        aoa = c2_s.number_input("AOA [°]:", value=0.0, key="aoa_cl_save")
+        
+        nombre_auto_cl = f"CL-X{int(x_pos)}-OAO{str(aoa).replace('-','neg')}-T{int(t_sel)}s.csv"
+        nombre_final_cl = st.text_input("Nombre del archivo a guardar:", value=nombre_auto_cl, key="nombre_final_cl_save")
         
         if st.button("🚀 SUBIR COMPLETO A DRIVE", use_container_width=True, type="primary", disabled=df_target is None, key="btn_save_cl"):
             if df_target is not None:
