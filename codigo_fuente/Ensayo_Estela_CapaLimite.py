@@ -2,17 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import os
 import io
+import re
+from scipy.interpolate import griddata
 from codigo_fuente.Calculations_Core import (
-    procesar_promedios, 
-    crear_archivos_individuales_por_tiempo_y_posicion, 
-    extraer_tiempo_y_coordenadas_YZ,
-    extraer_datos_para_grafico
+    procesar_promedios,
+    obtener_numero_sensor_desde_columna,
+    calcular_altura_absoluta_z
 )
 from codigo_fuente import Auth_Manager as auth
 from codigo_fuente.Graficos_Comunes import mostrar_configuracion_sensores
-import re
 
 def _calcular_valores_infinito(txt_bytes, timestamp_str):
     try:
@@ -61,13 +60,21 @@ def _calcular_valores_infinito(txt_bytes, timestamp_str):
     return None
 
 def show_capa_limite():
-    st.markdown("# 🌬️ CAPA LÍMITE - Análisis de Velocidades")
-    st.markdown("Análisis de perfiles de presión para obtener velocidad asumiendo $P_s = \max(P_t)$")
+    st.markdown("""
+        <div class="header-container">
+            <h1 style="font-size: 3rem; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+            🌬️ CAPA LÍMITE - Análisis 2D
+            </h1>
+            <h2 style="font-size: 1.8rem; margin-bottom: 0; opacity: 0.9;">
+            Mapeo de Velocidades en el Plano Transversal (Ps = max(P))
+            </h2>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("<hr style='border-top: 2px solid #333; margin-top: 10px; margin-bottom: 25px;'>", unsafe_allow_html=True)
 
     if 'configuracion_cl_local' not in st.session_state: st.session_state.configuracion_cl_local = None
-    if "datos_procesados_cl" not in st.session_state: st.session_state.datos_procesados_cl = {}
-    if "sub_archivos_cl_memoria" not in st.session_state: st.session_state.sub_archivos_cl_memoria = {}
-    if "perfiles_seleccionados_cl" not in st.session_state: st.session_state.perfiles_seleccionados_cl = []
+    if "archivos_cl_memoria" not in st.session_state: st.session_state.archivos_cl_memoria = {}
+    if "matriz_seleccionada_cl" not in st.session_state: st.session_state.matriz_seleccionada_cl = pd.DataFrame()
     if "cl_rho_inf" not in st.session_state: st.session_state.cl_rho_inf = 1.225
 
     # Configuración Global
@@ -75,7 +82,7 @@ def show_capa_limite():
     densidad = col_dens.number_input("Densidad del aire (ρ) [kg/m³]:", value=st.session_state.cl_rho_inf, step=0.01, format="%.4f")
 
     # --- CARGA Y CONFIGURACIÓN ---
-    with st.expander("📥 CARGA Y CONFIGURACIÓN DE PERFILES", expanded=True):
+    with st.expander("📥 CARGA Y CONFIGURACIÓN DE MATRICES NUEVAS", expanded=True):
         st.markdown("### 📥 PROCESAMIENTO DE ARCHIVOS CRUDOS")
         conf = mostrar_configuracion_sensores("cl_local")
         if st.button("💾 CONFIRMAR CONFIGURACIÓN PARA PROCESAR", use_container_width=True, key="btn_conf_cl"):
@@ -104,34 +111,23 @@ def show_capa_limite():
 
         if up_cl and st.session_state.configuracion_cl_local:
             for f in up_cl:
-                if f.name not in st.session_state.datos_procesados_cl:
-                    with st.spinner(f"🔨 Procesando {f.name}..."):
+                name = f.name.replace('.csv', '').replace('incertidumbre_', '')
+                if name not in st.session_state.archivos_cl_memoria:
+                    with st.spinner(f"🔨 Procesando {name}..."):
                         datos = procesar_promedios(f, st.session_state.configuracion_cl_local['orden'])
                         if datos is not None:
-                            st.session_state.datos_procesados_cl[f.name] = datos
-                            subs = crear_archivos_individuales_por_tiempo_y_posicion(datos, f.name)
-                            st.session_state.sub_archivos_cl_memoria.update(subs)
-                            st.session_state.perfiles_seleccionados_cl = [{'nombre': f"[Archivo Completo] {f.name}", 'datos': datos}]
-            st.success(f"✅ {len(st.session_state.datos_procesados_cl)} archivos en memoria.")
+                            st.session_state.archivos_cl_memoria[name] = datos
+            st.success(f"✅ {len(st.session_state.archivos_cl_memoria)} matrices en memoria.")
 
-        st.markdown("#### 🚀 Subir a Drive (Capa Límite)")
-        opciones_cl = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_cl.keys()] + list(st.session_state.sub_archivos_cl_memoria.keys())
-        if not opciones_cl: opciones_cl = ["No hay archivos cargados"]
-            
-        sel_save = st.selectbox("Seleccionar Archivo para guardar:", opciones_cl, key="sel_save_cl")
+        st.markdown("#### 🚀 Guardar Matriz 2D en Drive")
+        opciones_cl = list(st.session_state.archivos_cl_memoria.keys()) if st.session_state.archivos_cl_memoria else ["No hay archivos"]
+        arc_sel = st.selectbox("Seleccionar Archivo para guardar:", opciones_cl, key="sel_save_cl")
         
-        df_target = None
         tiempos = [0]
-        if st.session_state.datos_procesados_cl or st.session_state.sub_archivos_cl_memoria:
-            if sel_save.startswith("[Archivo Completo] "):
-                real_k = sel_save.replace("[Archivo Completo] ", "")
-                df_target = st.session_state.datos_procesados_cl.get(real_k)
-            elif sel_save in st.session_state.sub_archivos_cl_memoria:
-                sub = st.session_state.sub_archivos_cl_memoria[sel_save]
-                df_target = sub['datos']
-                
-            if df_target is not None and 'Tiempo_s' in df_target.columns:
-                tiempos = sorted(df_target['Tiempo_s'].dropna().unique())
+        if st.session_state.archivos_cl_memoria and arc_sel in st.session_state.archivos_cl_memoria:
+            df_arc = st.session_state.archivos_cl_memoria[arc_sel]
+            if 'Tiempo_s' in df_arc.columns:
+                tiempos = sorted(df_arc['Tiempo_s'].dropna().unique())
                 
         t_sel = st.selectbox("Tiempo [s]:", tiempos, key="t_sel_save_cl")
         
@@ -139,7 +135,7 @@ def show_capa_limite():
         x_pos = c1_s.number_input("Posición X [mm]:", value=0.0, key="x_pos_cl_save")
         aoa = c2_s.number_input("AOA [°]:", value=0.0, key="aoa_cl_save")
         
-        nombre_auto_cl = f"CL-X{int(x_pos)}-OAO{str(aoa).replace('-','neg')}-T{int(t_sel)}s.csv"
+        nombre_auto_cl = f"CL-2D-X{int(x_pos)}-OAO{str(aoa).replace('-','neg')}-T{int(t_sel)}s.csv"
         
         if 'last_nombre_auto_cl' not in st.session_state:
             st.session_state.last_nombre_auto_cl = nombre_auto_cl
@@ -151,99 +147,159 @@ def show_capa_limite():
             
         nombre_final_cl = st.text_input("Nombre del archivo a guardar:", key="nombre_final_cl_save")
         
-        if st.button("🚀 SUBIR COMPLETO A DRIVE", use_container_width=True, type="primary", disabled=df_target is None, key="btn_save_cl"):
-            if df_target is not None:
-                csv_b = df_target.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
-                if auth.save_csv_1d(st.session_state.username, nombre_final_cl, csv_b):
-                    st.success(f"✅ Archivo completo guardado en Drive: {nombre_final_cl}")
-                else:
-                    st.error("Error al guardar en Drive.")
+        if st.button("🚀 SUBIR MATRIZ A DRIVE", use_container_width=True, type="primary", disabled=not st.session_state.archivos_cl_memoria, key="btn_save_cl"):
+            if st.session_state.archivos_cl_memoria and arc_sel in st.session_state.archivos_cl_memoria:
+                df_arc = st.session_state.archivos_cl_memoria[arc_sel]
+                df_run = df_arc[df_arc['Tiempo_s'] == t_sel].copy() if 'Tiempo_s' in df_arc.columns else df_arc.copy()
+                
+                # Transformar el dataframe en una grilla Y,Z
+                res = []
+                for _, row in df_run.iterrows():
+                    y_t = row.get('Pos_Y_Traverser', 0)
+                    z_b = row.get('Pos_Z_Base', 0)
+                    for col in df_run.columns:
+                        num = obtener_numero_sensor_desde_columna(col)
+                        if num is not None:
+                            val = row[col]
+                            if pd.isna(val): continue
+                            z_r = calcular_altura_absoluta_z(num, z_b, st.session_state.configuracion_cl_local['distancia_toma_12'], st.session_state.configuracion_cl_local['distancia_entre_tomas'], 12, st.session_state.configuracion_cl_local['orden'])
+                            res.append({'Y': y_t, 'Z': z_r, 'Presion': val})
+                
+                df_matriz_save = pd.DataFrame(res)
+                if not df_matriz_save.empty:
+                    # Encontrar Presión Estática (Máximo valor global de presión en la matriz)
+                    P_s = df_matriz_save['Presion'].max()
+                    
+                    # Calcular Velocidad para cada punto
+                    df_matriz_save['Velocidad'] = np.sqrt(2 * (df_matriz_save['Presion'] - P_s).abs() / densidad)
+                    
+                    csv_b = df_matriz_save.to_csv(sep=';', index=False, decimal=',').encode('utf-8-sig')
+                    # Usamos save_csv_2d por ser un plano bidimensional, aunque esté en CL.
+                    # Se guardará en la carpeta 2D de Drive
+                    if auth.save_csv_2d(st.session_state.username, nombre_final_cl, csv_b):
+                        st.success(f"✅ Matriz 2D guardada en Drive: {nombre_final_cl}")
+                    else:
+                        st.error("Error al guardar en Drive.")
 
     st.markdown("---")
 
     # --- PASO 2: Selección ---
-    st.markdown("### 📥 PASO 2: Selección de Perfiles")
-    modo_carga = st.radio("Cargar perfiles desde:", ["🧠 Memoria de Sesión", "🗄️ Base de Datos (Drive)"], horizontal=True, key="modo_carga_cl")
+    st.markdown("### 📥 PASO 2: Selección de Matrices para Análisis")
+    modo_carga = st.radio("Cargar matrices desde:", ["🗄️ Base de Datos (Drive)", "🧠 Memoria de Sesión"], horizontal=True, key="modo_carga_cl")
     
-    if modo_carga == "🧠 Memoria de Sesión":
-        opciones_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_cl.keys()] + list(st.session_state.sub_archivos_cl_memoria.keys())
-        if not opciones_mem:
-            st.warning("⚠️ No hay archivos en la memoria de sesión.")
-        else:
-            default_mem = [f"[Archivo Completo] {k}" for k in st.session_state.datos_procesados_cl.keys()]
-            sel_labels_mem = st.multiselect("Seleccionar Perfiles de Memoria de Sesión:", opciones_mem, default=default_mem if default_mem else None, key="sel_perfiles_cl_mem_ui")
-            
-            if 'last_sel_perfiles_cl_mem' not in st.session_state: st.session_state.last_sel_perfiles_cl_mem = []
-                
-            if sel_labels_mem != st.session_state.last_sel_perfiles_cl_mem:
-                st.session_state.perfiles_seleccionados_cl = []
-                for label in sel_labels_mem:
-                    if label.startswith("[Archivo Completo] "):
-                        real_k = label.replace("[Archivo Completo] ", "")
-                        df = st.session_state.datos_procesados_cl[real_k].copy()
-                        st.session_state.perfiles_seleccionados_cl.append({'nombre': label, 'datos': df})
-                    elif label in st.session_state.sub_archivos_cl_memoria:
-                        sub = st.session_state.sub_archivos_cl_memoria[label]
-                        st.session_state.perfiles_seleccionados_cl.append({'nombre': label, 'datos': sub['datos'].copy()})
-                st.session_state.last_sel_perfiles_cl_mem = sel_labels_mem
-                st.rerun()
-    else:
+    if modo_carga == "🗄️ Base de Datos (Drive)":
         try:
-            files_drv = auth.get_user_files_1d(st.session_state.username)
+            archivos_drv = auth.get_user_files_2d(st.session_state.username)
         except:
-            files_drv = []
+            archivos_drv = []
 
-        if not files_drv:
-            st.info("No se encontraron perfiles guardados en Drive.")
+        if not archivos_drv:
+            st.info("No se encontraron matrices guardadas en Drive.")
         else:
-            sel_labels = st.multiselect("Seleccionar Perfiles de Drive:", files_drv, key="sel_perfiles_cl_ui")
-            if 'last_sel_perfiles_cl' not in st.session_state: st.session_state.last_sel_perfiles_cl = []
-                
-            if sel_labels != st.session_state.last_sel_perfiles_cl:
-                st.session_state.perfiles_seleccionados_cl = []
-                with st.spinner("Descargando perfiles..."):
-                    for label in sel_labels:
-                        csv_content = auth.get_csv_content_1d(st.session_state.username, label)
-                        if csv_content:
-                            df = pd.read_csv(io.StringIO(csv_content), sep=';', decimal=',')
-                            st.session_state.perfiles_seleccionados_cl.append({'nombre': label, 'datos': df})
-                    st.session_state.last_sel_perfiles_cl = sel_labels
-                st.rerun()
+            # Filtramos solo los archivos que empiecen con CL
+            archivos_cl = [a for a in archivos_drv if a[1].startswith("CL-")]
+            if not archivos_cl:
+                st.info("No se encontraron matrices de Capa Límite (CL-...) guardadas en Drive.")
+            else:
+                dict_drv = {f"{a[1]} [{a[2][:10] if a[2] else ''}]": a for a in archivos_cl}
+                sel_drv = st.selectbox("Seleccionar Matriz de Drive:", ["-- Seleccionar --"] + list(dict_drv.keys()), key="sel_perfiles_cl_ui")
+                if sel_drv != "-- Seleccionar --":
+                    if 'last_sel_drv_cl' not in st.session_state or st.session_state.last_sel_drv_cl != sel_drv:
+                        with st.spinner("Descargando matriz..."):
+                            raw = auth.download_file_2d(dict_drv[sel_drv][0])
+                            if raw:
+                                df_m = pd.read_csv(io.BytesIO(raw), sep=';', decimal=',')
+                                if 'Y' not in df_m.columns:
+                                    df_m = pd.read_csv(io.BytesIO(raw), sep=',', decimal='.')
+                                st.session_state.matriz_seleccionada_cl = df_m
+                                st.session_state.last_sel_drv_cl = sel_drv
+                        st.success(f"✅ Matriz cargada y lista para visualizar.")
+                        st.rerun()
+    else:
+        if not st.session_state.archivos_cl_memoria:
+            st.warning("⚠️ No hay matrices en la memoria de sesión. Procese archivos en el Paso 1.")
+        else:
+            arc_mem_sel = st.selectbox("Seleccionar Matriz en Memoria:", list(st.session_state.archivos_cl_memoria.keys()), key="sel_mem_cl_ui")
+            df_arc = st.session_state.archivos_cl_memoria[arc_mem_sel]
+            tiempos = sorted(df_arc['Tiempo_s'].dropna().unique()) if 'Tiempo_s' in df_arc.columns else [0]
+            t_sel_mem = st.selectbox("Tiempo [s]:", tiempos, key="t_sel_mem_cl_ui") if len(tiempos) > 1 else tiempos[0]
+            
+            if st.button("📥 Cargar Matriz al Visualizador", use_container_width=True, key="btn_load_mem_cl"):
+                if not st.session_state.configuracion_cl_local:
+                    st.error("⚠️ Falta confirmar la configuración del peine en el Paso 1.")
+                else:
+                    conf = st.session_state.configuracion_cl_local
+                    df_run = df_arc[df_arc['Tiempo_s'] == t_sel_mem] if 'Tiempo_s' in df_arc.columns else df_arc.copy()
+                    res = []
+                    for _, row in df_run.iterrows():
+                        y_t = row.get('Pos_Y_Traverser', 0)
+                        z_b = row.get('Pos_Z_Base', 0)
+                        for col in df_run.columns:
+                            num = obtener_numero_sensor_desde_columna(col)
+                            if num is not None:
+                                val = row[col]
+                                if pd.isna(val): continue
+                                z_r = calcular_altura_absoluta_z(num, z_b, conf['distancia_toma_12'], conf['distancia_entre_tomas'], 12, conf['orden'])
+                                res.append({'Y': y_t, 'Z': z_r, 'Presion': val})
+                    
+                    df_matriz_mem = pd.DataFrame(res)
+                    if not df_matriz_mem.empty:
+                        # Encontrar Presión Estática (Máximo valor global)
+                        P_s = df_matriz_mem['Presion'].max()
+                        # Calcular Velocidad para cada punto
+                        df_matriz_mem['Velocidad'] = np.sqrt(2 * (df_matriz_mem['Presion'] - P_s).abs() / densidad)
+                        
+                        st.session_state.matriz_seleccionada_cl = df_matriz_mem
+                        st.success(f"✅ Matriz de memoria ({arc_mem_sel}) cargada y procesada.")
+                        st.rerun()
+                    else:
+                        st.error("No se pudieron procesar los puntos de la matriz.")
 
     st.markdown("---")
-
-    # --- PASO 4: Gráfico ---
-    st.markdown("### 📈 PASO 3: Visualización de Velocidad")
     
-    if not st.session_state.perfiles_seleccionados_cl:
-        st.warning("⚠️ Seleccione y cargue perfiles.")
-    elif not st.session_state.configuracion_cl_local:
-        st.warning("⚠️ Falta confirmar la configuración del peine en el Paso 1 para poder graficar.")
+    # --- PASO 3: Visualización 2D ---
+    st.markdown("### 🎨 PASO 3: Visualización 2D Interactiva")
+    
+    if st.session_state.matriz_seleccionada_cl.empty:
+        st.warning("⚠️ Seleccione y cargue una matriz en el Paso 2 para visualizar.")
     else:
-        fig = go.Figure()
-
-        for perf in st.session_state.perfiles_seleccionados_cl:
-            df_perf = perf['datos']
-            for i_row, row in df_perf.iterrows():
-                # Extraer presiones y alturas usando la configuracion original
-                z, p = extraer_datos_para_grafico({'datos': df_perf}, st.session_state.configuracion_cl_local, fila_index=i_row)
-                if z and p:
-                    # Encontrar Presión Estática (Máximo valor de presión / el menos negativo)
-                    P_s = max(p)
-                    
-                    # Calcular Velocidad: V = sqrt(2 * |P - P_s| / rho)
-                    velocidades = [np.sqrt(2 * abs(val - P_s) / densidad) for val in p]
-                    
-                    sub_label = f"Fila {i_row+1} ({perf['nombre']}) [Ps = {P_s:.2f}]"
-                    fig.add_trace(go.Scatter(x=velocidades, y=z, mode='lines+markers', name=sub_label))
-
-        fig.update_layout(
-            title="Perfil de Velocidades en la Capa Límite",
-            xaxis_title="Velocidad [m/s]", 
-            yaxis_title="Altura Z [mm]", 
-            height=600, 
-            paper_bgcolor="rgba(0,0,0,0)", 
-            plot_bgcolor="rgba(0,0,0,0)", 
-            font=dict(color="white")
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        c_opt1, c_opt2 = st.columns(2)
+        with c_opt1:
+            var_sel = st.selectbox("Variable a graficar:", ["Velocidad [m/s]", "Presión Medida [Pa]"])
+        with c_opt2:
+            render_type = st.selectbox("Tipo de Renderizado:", ["Contour Suavizado", "Mapa de Calor"])
+            
+        df_m = st.session_state.matriz_seleccionada_cl
+        
+        if var_sel == "Velocidad [m/s]":
+            val_col = 'Velocidad'
+        else:
+            val_col = 'Presion'
+            
+        y, z, v = df_m['Y'].values, df_m['Z'].values, df_m[val_col].values
+        
+        # En caso de matriz degenerada (una sola línea vertical) fallará griddata, lo protegemos
+        if len(np.unique(y)) > 1 and len(np.unique(z)) > 1:
+            grid_y = np.linspace(y.min(), y.max(), 150)
+            grid_z = np.linspace(z.min(), z.max(), 150)
+            Gy, Gz = np.meshgrid(grid_y, grid_z)
+            Gv = griddata((y, z), v, (Gy, Gz), method='cubic')
+            
+            fig = go.Figure()
+            if render_type == "Contour Suavizado":
+                fig.add_trace(go.Contour(x=grid_y, y=grid_z, z=Gv, colorscale='Jet', colorbar=dict(title=var_sel)))
+            else:
+                fig.add_trace(go.Heatmap(x=grid_y, y=grid_z, z=Gv, colorscale='Jet', colorbar=dict(title=var_sel)))
+            
+            fig.add_trace(go.Scatter(x=y, y=z, mode='markers', marker=dict(size=3, color='white', opacity=0.3), name='Puntos medidos'))
+                
+            fig.update_layout(title=f"Mapeo 2D Capa Límite: {var_sel}", xaxis_title="Y [mm]", yaxis_title="Z [mm]", height=700, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+            fig.update_xaxes(scaleanchor="y", scaleratio=1)
+            st.plotly_chart(fig, use_container_width=True, config={'modeBarButtonsToAdd': ['drawline', 'eraseshape']})
+        else:
+            # Fallback a scatter plot si es 1D
+            st.warning("La matriz cargada solo contiene puntos en una dimensión (Y constante). Mostrando gráfico Scatter 1D.")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=v, y=z, mode='lines+markers', name=var_sel))
+            fig.update_layout(title=f"Perfil Capa Límite: {var_sel}", xaxis_title=var_sel, yaxis_title="Z [mm]", height=600, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+            st.plotly_chart(fig, use_container_width=True)
