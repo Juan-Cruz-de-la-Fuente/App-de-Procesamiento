@@ -192,23 +192,21 @@ def show_capa_limite():
 
     st.markdown("---")
 
-    # --- PASO 3: Configuración Vis ---
-    st.markdown("### 🛠️ PASO 3: Configuración del Peine para Gráfico")
-    conf_vis = mostrar_configuracion_sensores("cl_vis")
-
     # --- PASO 4: Gráfico ---
-    st.markdown("### 📈 PASO 4: Visualización de Velocidad")
+    st.markdown("### 📈 PASO 3: Visualización de Velocidad")
     
     if not st.session_state.perfiles_seleccionados_cl:
         st.warning("⚠️ Seleccione y cargue perfiles.")
+    elif not st.session_state.configuracion_cl_local:
+        st.warning("⚠️ Falta confirmar la configuración del peine en el Paso 1 para poder graficar.")
     else:
         fig = go.Figure()
 
         for perf in st.session_state.perfiles_seleccionados_cl:
             df_perf = perf['datos']
             for i_row, row in df_perf.iterrows():
-                # Extraer presiones y alturas
-                z, p = extraer_datos_para_grafico({'datos': df_perf}, conf_vis, fila_index=i_row)
+                # Extraer presiones y alturas usando la configuracion original
+                z, p = extraer_datos_para_grafico({'datos': df_perf}, st.session_state.configuracion_cl_local, fila_index=i_row)
                 if z and p:
                     # Encontrar Presión Estática (Máximo valor de presión / el menos negativo)
                     P_s = max(p)
