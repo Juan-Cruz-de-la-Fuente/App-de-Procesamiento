@@ -140,7 +140,16 @@ def show_capa_limite():
         aoa = c2_s.number_input("AOA [°]:", value=0.0, key="aoa_cl_save")
         
         nombre_auto_cl = f"CL-X{int(x_pos)}-OAO{str(aoa).replace('-','neg')}-T{int(t_sel)}s.csv"
-        nombre_final_cl = st.text_input("Nombre del archivo a guardar:", value=nombre_auto_cl, key="nombre_final_cl_save")
+        
+        if 'last_nombre_auto_cl' not in st.session_state:
+            st.session_state.last_nombre_auto_cl = nombre_auto_cl
+            st.session_state.nombre_final_cl_save = nombre_auto_cl
+            
+        if st.session_state.last_nombre_auto_cl != nombre_auto_cl:
+            st.session_state.nombre_final_cl_save = nombre_auto_cl
+            st.session_state.last_nombre_auto_cl = nombre_auto_cl
+            
+        nombre_final_cl = st.text_input("Nombre del archivo a guardar:", key="nombre_final_cl_save")
         
         if st.button("🚀 SUBIR COMPLETO A DRIVE", use_container_width=True, type="primary", disabled=df_target is None, key="btn_save_cl"):
             if df_target is not None:
