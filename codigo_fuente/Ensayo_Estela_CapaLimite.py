@@ -167,6 +167,7 @@ def show_capa_limite():
                 
                 df_matriz_save = pd.DataFrame(res)
                 if not df_matriz_save.empty:
+                    df_matriz_save['Presion'] = pd.to_numeric(df_matriz_save['Presion'], errors='coerce')
                     # Encontrar Presión Estática (Máximo valor global de presión en la matriz)
                     P_s = df_matriz_save['Presion'].max()
                     
@@ -244,6 +245,7 @@ def show_capa_limite():
                     
                     df_matriz_mem = pd.DataFrame(res)
                     if not df_matriz_mem.empty:
+                        df_matriz_mem['Presion'] = pd.to_numeric(df_matriz_mem['Presion'], errors='coerce')
                         # Encontrar Presión Estática (Máximo valor global)
                         P_s = df_matriz_mem['Presion'].max()
                         # Calcular Velocidad para cada punto
